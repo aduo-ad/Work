@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#FF8C42" />
+<meta name="description" content="阿duo的秋招旅程 - 记录投递、管理进度、收获 Offer，求职进度管理工具" />
+<meta name="color-scheme" content="light dark" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="stylesheet" href="css/style.css" />
+<title>阿duo的秋招旅程 🎯</title>
+</head>
+<body>
+
+<div class="app-wrapper">
+
+  <!-- 顶部 -->
+  <div class="app-header">
+    <div class="app-header-inner">
+      <div>
+        <h1>🎯 阿duo的秋招旅程</h1>
+        <div class="subtitle">记录每一份投递，冲向下一个 Offer</div>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" title="切换主题" aria-label="切换深色/浅色模式">
+        <span id="theme-icon">🌙</span>
+      </button>
+    </div>
+    <div class="header-stats">
+      <div class="header-stat"><div class="n" id="st-total">0</div><div class="l">已投递</div></div>
+      <div class="header-stat"><div class="n" id="st-active">0</div><div class="l">进行中</div></div>
+      <div class="header-stat"><div class="n" id="st-offer">0</div><div class="l">Offer</div></div>
+    </div>
+  </div>
+
+  <!-- 工具栏 -->
+  <div class="toolbar">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search-input" placeholder="搜索公司 / 岗位 / 备注…" autocomplete="off" />
+    </div>
+    <select class="sort-select" id="sort-select" aria-label="排序方式">
+      <option value="default">🕐 默认</option>
+      <option value="name">🔤 公司名</option>
+      <option value="date-desc">📅 最新</option>
+      <option value="stage">📊 进度</option>
+    </select>
+    <button class="settings-btn" id="settings-btn" title="设置" aria-label="打开设置">⚙️</button>
+  </div>
+
+  <!-- 内容区 -->
+  <div class="app-content">
+    <div class="view active" id="view-companies">
+      <div class="card-list" id="companies-list"></div>
+    </div>
+    <div class="view" id="view-progress">
+      <div class="kanban" id="kanban"></div>
+    </div>
+    <div class="view" id="view-offers">
+      <div class="offer-grid" id="offers-list"></div>
+    </div>
+    <div class="view" id="view-research">
+      <!-- 搜索区 -->
+      <div class="research-hero">
+        <div class="rh-title">🔬 一键研究公司</div>
+        <div class="research-search">
+          <input type="text" id="research-input" placeholder="输入公司名，例如：字节跳动" autocomplete="off" />
+          <button class="btn primary" id="btn-ai-analyze" style="flex:0;padding:12px 18px;font-size:13px">🤖 AI分析</button>
+        </div>
+        <div class="source-chips" id="source-chips">
+          <button class="source-chip niuke" data-source="niuke">🐮 牛客面经</button>
+          <button class="source-chip maimai" data-source="maimai">💬 脉脉评价</button>
+          <button class="source-chip zhihu" data-source="zhihu">💡 知乎</button>
+          <button class="source-chip kanzhun" data-source="kanzhun">👀 看准网</button>
+          <button class="source-chip xiaohongshu" data-source="xiaohongshu">📕 小红书</button>
+        </div>
+      </div>
+
+      <!-- AI 分析结果 -->
+      <div class="ai-section" id="ai-section" style="display:none">
+        <div class="ai-result-card" id="ai-result-card">
+          <div class="ai-header">
+            <span class="ai-badge">🤖 AI 分析</span>
+            <button class="icon-btn btn-ai-save" title="保存为笔记" style="font-size:12px">💾</button>
+          </div>
+          <div class="ai-content loading" id="ai-content">
+            <span class="ai-spinner"></span>正在分析…
+          </div>
+        </div>
+      </div>
+
+      <!-- 研究笔记列表 -->
+      <div class="research-notes" id="research-notes-list"></div>
+      <div class="empty-state" id="research-empty">
+        <div class="big">🔬</div>
+        <div class="title">秋招研究院</div>
+        <div class="sub">输入公司名，一键搜索面经、薪资、评价<br>AI 帮你汇总分析</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加按钮 -->
+  <button class="add-btn" id="add-btn" title="添加公司" aria-label="添加公司">＋</button>
+
+  <!-- 底部导航 -->
+  <div class="bottom-nav">
+    <div class="nav-item active" data-view="companies">
+      <span class="ico">📋</span><span>已投递</span>
+      <span class="badge" id="nav-total">0</span>
+    </div>
+    <div class="nav-item" data-view="progress">
+      <span class="ico">📊</span><span>进度</span>
+      <span class="badge" id="nav-active">0</span>
+    </div>
+    <div class="nav-item" data-view="offers">
+      <span class="ico">🎁</span><span>Offer</span>
+      <span class="badge" id="nav-offer">0</span>
+    </div>
+    <div class="nav-item" data-view="research">
+      <span class="ico">🔬</span><span>研究院</span>
+    </div>
+  </div>
+
+  <!-- 添加/编辑弹窗 -->
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <h3 id="modal-title">添加公司</h3>
+
+      <div class="field">
+        <label>🏢 公司名称 <span style="color:var(--pink)">*</span></label>
+        <input id="f-company" placeholder="例如：腾讯 / 字节跳动" autocomplete="off" />
+        <div class="field-error" id="err-company">请填写公司名称</div>
+      </div>
+
+      <div class="field">
+        <label>💼 岗位名称</label>
+        <input id="f-position" placeholder="例如：后端开发工程师" autocomplete="off" />
+      </div>
+
+      <div class="field">
+        <label>📊 当前进度</label>
+        <div class="stage-picker" id="stage-picker"></div>
+      </div>
+
+      <div class="field">
+        <label>📅 日期（可选）</label>
+        <input id="f-date" type="date" />
+      </div>
+
+      <!-- Offer 专属字段 -->
+      <div id="offer-fields" class="offer-fields">
+        <div class="field">
+          <label>💰 薪资待遇</label>
+          <input id="f-salary" placeholder="例如：25k × 15 / 年包 40w" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label>📍 工作地点</label>
+          <input id="f-location" placeholder="例如：北京 / 上海" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="field">
+        <label>📝 备注（可选）</label>
+        <textarea id="f-note" placeholder="笔试链接、面试官、注意事项…"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn ghost" id="btn-cancel">取消</button>
+        <button class="btn primary" id="btn-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认 -->
+  <div class="confirm-box" id="confirm-box">
+    <div class="confirm-dialog">
+      <div class="msg" id="confirm-msg"></div>
+      <div class="btns">
+        <button class="btn ghost" id="btn-confirm-cancel">取消</button>
+        <button class="btn primary" id="btn-confirm-ok" style="background:var(--pink)">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div class="settings-panel" id="settings-panel">
+    <div class="settings-sheet">
+      <h3>⚙️ 设置</h3>
+
+      <div class="setting-row">
+        <span class="sl">📤 导出数据</span>
+        <button class="btn primary" id="btn-export" style="flex:0;padding:8px 20px;font-size:13px">导出 JSON</button>
+      </div>
+      <div class="setting-row">
+        <span class="sl">📥 导入数据</span>
+        <button class="btn ghost" id="btn-import" style="flex:0;padding:8px 20px;font-size:13px">选择文件</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" />
+      </div>
+      <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <span class="sl">🤖 Gemini API Key<span class="api-key-status unset" id="api-key-status">未设置</span></span>
+        <div class="api-key-row">
+          <input type="password" id="f-apikey" placeholder="粘贴你的 Gemini API Key…" autocomplete="off" />
+          <button class="btn-sm" id="btn-save-apikey">保存</button>
+        </div>
+        <span style="font-size:10px;color:var(--text-dim)">
+          免费获取：<a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--blue)">Google AI Studio</a> → 创建 API Key → 粘贴到这里。仅存储在本地浏览器。
+        </span>
+      </div>
+      <div class="setting-row">
+        <span class="sl">⌨️ 快捷键</span>
+        <span style="font-size:12px;color:var(--text-dim)">
+          <kbd>Ctrl+N</kbd> 新建 &nbsp; <kbd>Ctrl+F</kbd> 搜索 &nbsp; <kbd>Esc</kbd> 关闭
+        </span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn primary" id="btn-settings-close">完成</button>
+      </div>
+
+      <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text-dim)">
+        💡 提示：定期导出数据以备份，防止浏览器数据被清理
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+</div><!-- .app-wrapper -->
+
+<script src="js/app.js"></script>
+</body>
+</html>
