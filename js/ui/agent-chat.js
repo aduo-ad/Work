@@ -148,7 +148,11 @@ class AgentChatUI {
 
   _scroll() {
     if (this._autoScroll && this.container) {
-      this.container.scrollTop = this.container.scrollHeight;
+      // 滚动页面让最新内容可见（容器不再内部滚动）
+      const lastChild = this.container.lastElementChild;
+      if (lastChild) {
+        lastChild.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
     }
   }
 
