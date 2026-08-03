@@ -124,7 +124,7 @@ class MockLLM {
 
   /** 非流式调用 */
   async chat(messages, opts = {}) {
-    await this._sleep(this._delay);
+    await this._sleep(this._delay, opts.signal);
     const response = this._nextResponse();
     this._updateFakeUsage(response);
     return response;
@@ -138,9 +138,10 @@ class MockLLM {
     // 逐块输出，模拟流式体验
     const chunkSize = 3 + Math.floor(Math.random() * 5); // 3-7 字/块
     for (let i = 0; i < fullText.length; i += chunkSize) {
+      if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       const chunk = fullText.slice(i, i + chunkSize);
       onChunk?.(chunk, fullText.slice(0, i + chunkSize));
-      await this._sleep(this._streamDelay);
+      await this._sleep(this._streamDelay, opts.signal);
     }
     return fullText;
   }
@@ -163,8 +164,12 @@ class MockLLM {
     };
   }
 
-  _sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
+  _sleep(ms, signal) {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+      const timer = setTimeout(resolve, ms);
+      if (signal) signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+    });
   }
 }
 
