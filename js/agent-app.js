@@ -448,7 +448,7 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
   switch (mode) {
     case 'research': {
       const sc = streamCallbacks();
-      const agent = prepareAgent(createResearchAgent(tools, llm);)
+      const agent = prepareAgent(createResearchAgent(tools, llm));
       await agent.run(`请全面研究这家公司：${query}。使用 web_search 搜索至少 3 个不同来源。`, {
         onStream:    sc.onStream,
         onStreamEnd: sc.onStreamEnd,
@@ -462,8 +462,8 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
 
     case 'compare': {
       const sc1 = streamCallbacks();
-      const researcher = prepareAgent(createResearchAgent(tools, llm);)
-      const comparer = prepareAgent(createCompareAgent(tools, llm);)
+      const researcher = prepareAgent(createResearchAgent(tools, llm));
+      const comparer = prepareAgent(createCompareAgent(tools, llm));
 
       chatUI.updateStatus('🔬', '研究 Agent 工作中…');
       const researchResult = await researcher.run(
@@ -487,7 +487,7 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
 
     case 'interview': {
       const sc = streamCallbacks();
-      const agent = prepareAgent(createInterviewAgent(tools, llm);)
+      const agent = prepareAgent(createInterviewAgent(tools, llm));
       const localKnowledge = memory.query(query);
       const knowledgeHint = localKnowledge.length
         ? `\n本地知识库已有以下信息，请利用：${JSON.stringify(localKnowledge)}`
@@ -505,8 +505,8 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
     }
 
     case 'full': {
-      const researcher = prepareAgent(createResearchAgent(tools, llm);)
-      const critic = prepareAgent(createCriticAgent(tools, llm);)
+      const researcher = prepareAgent(createResearchAgent(tools, llm));
+      const critic = prepareAgent(createCriticAgent(tools, llm));
 
       const sc1 = streamCallbacks();
       chatUI.updateStatus('🔬', '研究 Agent 搜集信息…');
