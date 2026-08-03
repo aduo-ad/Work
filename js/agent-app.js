@@ -56,11 +56,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             chatUI.addFinalAnswer(msg.answer, { steps: msg.steps, forced: msg.forced, usage: msg.usage, cost: msg.cost });
             chatUI.clearStatus();
             setRunning(false);
+            window.__agentAborted = false;
             break;
           case 'error':
             chatUI.addError(msg.message);
             chatUI.clearStatus();
             setRunning(false);
+            window.__agentAborted = false;
             break;
           case 'tool_request':
             // Worker 需要主线程执行 memory 工具
@@ -316,6 +318,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnRun.addEventListener('click', async () => {
     // 如果正在运行 → 中止
     if (running) {
+      // 直接设置全局 abort 标志（MockLLM 检查这个）
+      window.__agentAborted = true;
       if (agentWorker) {
         agentWorker.postMessage({ type: 'abort' });
         terminateWorker();
@@ -350,6 +354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // 创建新的 AbortController
+    window.__agentAborted = false;
     abortController = new AbortController();
     setRunning(true);
     chatUI.clear();
@@ -386,6 +391,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await runAgent(mode, query, llm, tools, chatUI, abortController);
         chatUI.clearStatus();
         setRunning(false);
+        window.__agentAborted = false;
       }
     } catch (e) {
       chatUI.clearStatus();
