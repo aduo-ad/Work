@@ -76,7 +76,7 @@ ${customContext}`;
    * @param {Function} callbacks.onComplete   - 完成回调
    * @param {Function} callbacks.onError      - 错误回调
    */
-  async run(task, { onStep, onToolCall, onComplete, onError } = {}) {
+  async run(task, { onStep, onToolCall, onComplete, onError, onStream, onStreamEnd } = {}) {
     this.trace = [];
     this._aborted = false;
 
@@ -84,13 +84,25 @@ ${customContext}`;
       { role: 'system', content: this.buildSystemPrompt() },
       { role: 'user', content: task }
     ];
+    const useStream = !!onStream && typeof this.llm.chatStream === 'function';
 
     for (let step = 0; step < this.maxSteps; step++) {
       if (this._aborted) break;
 
       try {
-        // ====== Step 1: THINK（调用 LLM） ======
-        const rawResponse = await this.llm.chat(messages, { temperature: this.temperature });
+        // ====== Step 1: THINK（调用 LLM，优先流式输出） ======
+        let rawResponse;
+        if (useStream) {
+          onStream(step + 1, ''); // 通知 UI：开始流式思考
+          rawResponse = await this.llm.chatStream(
+            messages,
+            { temperature: this.temperature },
+            (chunk, fullText) => onStream(step + 1, fullText)
+          );
+          onStreamEnd?.(step + 1, rawResponse);
+        } else {
+          rawResponse = await this.llm.chat(messages, { temperature: this.temperature });
+        }
         const parsed = this._parseResponse(rawResponse);
 
         this.trace.push({

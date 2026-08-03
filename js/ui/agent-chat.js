@@ -45,13 +45,52 @@ class AgentChatUI {
   /** 推理步骤 */
   addReasoning(step, text) {
     this._append(`
-      <div class="ag-step ag-step-think">
+      <div class="ag-step ag-step-think" data-stream-step="${step}">
         <div class="ag-step-head">
           <span class="ag-step-num">🧠 第${step}步 · 思考</span>
         </div>
         <div class="ag-step-body">${this._esc(text)}</div>
       </div>
     `);
+  }
+
+  /** 流式思考：创建或更新实时思考卡片 */
+  addStreamingThought(step, text) {
+    const id = `ag-stream-${step}`;
+    let el = document.getElementById(id);
+    if (!el) {
+      // 首次创建：带闪烁指示器
+      const html = `
+        <div class="ag-step ag-step-think ag-step-streaming" id="${id}" data-stream-step="${step}">
+          <div class="ag-step-head">
+            <span class="ag-step-num">🧠 第${step}步 · 思考中</span>
+            <span class="ag-stream-dot"></span>
+          </div>
+          <div class="ag-step-body streaming-body">${text ? this._renderMarkdown(text) : '<span class="ag-cursor">▊</span>'}</div>
+        </div>`;
+      this._append(html);
+      el = document.getElementById(id);
+    } else {
+      // 更新内容
+      const body = el.querySelector('.streaming-body');
+      if (body) {
+        body.innerHTML = this._renderMarkdown(text) + '<span class="ag-cursor">▊</span>';
+      }
+    }
+    this._scroll();
+  }
+
+  /** 流式思考完成：去掉闪烁，转为普通卡 */
+  finalizeStreamingThought(step) {
+    const el = document.getElementById(`ag-stream-${step}`);
+    if (!el) return;
+    el.classList.remove('ag-step-streaming');
+    const dot = el.querySelector('.ag-stream-dot');
+    if (dot) dot.remove();
+    const cursor = el.querySelector('.ag-cursor');
+    if (cursor) cursor.remove();
+    const head = el.querySelector('.ag-step-num');
+    if (head) head.textContent = `🧠 第${step}步 · 思考`;
   }
 
   /** 工具调用 */

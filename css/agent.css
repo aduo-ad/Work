@@ -74,6 +74,24 @@
 .ag-step-think .ag-step-head { color: var(--purple); }
 .ag-step-think .ag-step-body { color: var(--text-dim); font-style: italic; }
 
+/* 流式思考闪烁点 */
+.ag-stream-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--purple); animation: streamPulse 0.8s ease-in-out infinite;
+}
+@keyframes streamPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.7)} }
+
+/* 流式光标 */
+.ag-cursor {
+  display: inline; color: var(--purple); font-weight: 700;
+  animation: cursorBlink 0.6s step-end infinite;
+}
+@keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* 流式思考卡片动画 */
+.ag-step-streaming { animation: streamIn .15s ease; }
+@keyframes streamIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
 /* 工具调用 */
 .ag-step-act { background: var(--blue-light); }
 .ag-step-act .ag-step-head { color: var(--blue); }
