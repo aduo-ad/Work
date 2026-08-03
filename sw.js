@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qiuzhao-v2';
+const CACHE_NAME = 'qiuzhao-v4';
 const ASSETS = [
   './index.html',
   './css/style.css',
@@ -16,7 +16,7 @@ self.addEventListener('install', e => {
   self.skipWaiting();
 });
 
-// 激活：清理旧缓存
+// 激活：清理旧缓存 + 立即接管
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -26,9 +26,21 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// 拦截请求：缓存优先（静态资源），网络回退
+// 拦截请求：网络优先，失败时用缓存
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
+    fetch(e.request)
+      .then(resp => {
+        // 网络成功 → 更新缓存（只缓存同源资源）
+        if (resp.ok && e.request.url.startsWith(self.location.origin)) {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+        }
+        return resp;
+      })
+      .catch(() => {
+        // 网络失败 → 尝试缓存
+        return caches.match(e.request);
+      })
   );
 });

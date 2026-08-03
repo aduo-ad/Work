@@ -1,0 +1,142 @@
+/* ==========================================
+   研究院 — Agent 对话界面样式
+   ========================================== */
+
+/* Agent Tab 切换 */
+.ag-tabs {
+  display: flex; gap: 4px; margin-bottom: 14px;
+  background: var(--card); border-radius: var(--radius-sm);
+  padding: 4px; box-shadow: var(--shadow);
+}
+.ag-tab {
+  flex: 1; padding: 10px 8px; border-radius: 10px;
+  border: none; background: transparent; color: var(--text-dim);
+  font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  transition: all .15s;
+}
+.ag-tab.active {
+  background: linear-gradient(135deg, var(--orange), var(--pink));
+  color: #fff;
+}
+
+/* Agent 对话容器 */
+.ag-container {
+  background: var(--card); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px;
+  max-height: 55vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  min-height: 120px;
+}
+.ag-container:empty::after {
+  content: '输入公司名称，选择 Agent 模式开始分析';
+  display: block; text-align: center; color: var(--text-dim);
+  padding: 30px 0; font-size: 13px;
+}
+
+/* 状态栏 */
+.ag-status {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: var(--orange-light);
+  border-radius: var(--radius-sm); font-size: 13px;
+  color: var(--orange); font-weight: 600;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+/* Agent 消息气泡 */
+.ag-msg { display: flex; }
+.ag-msg-user { justify-content: flex-end; }
+.ag-msg-bubble {
+  max-width: 85%; padding: 10px 14px; border-radius: 14px;
+  font-size: 14px; line-height: 1.5;
+}
+.ag-msg-user .ag-msg-bubble {
+  background: linear-gradient(135deg, var(--orange), var(--pink));
+  color: #fff;
+}
+
+/* 步骤卡片 */
+.ag-step {
+  border-radius: var(--radius-sm); overflow: hidden;
+  animation: cardIn .25s ease;
+}
+.ag-step-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; font-size: 12px; font-weight: 600;
+}
+.ag-step-num { flex: 1; }
+.ag-step-body {
+  padding: 10px 14px; font-size: 13px; line-height: 1.6;
+  color: var(--text); word-break: break-word;
+}
+
+/* 思考步骤 */
+.ag-step-think { background: var(--purple-light); }
+.ag-step-think .ag-step-head { color: var(--purple); }
+.ag-step-think .ag-step-body { color: var(--text-dim); font-style: italic; }
+
+/* 工具调用 */
+.ag-step-act { background: var(--blue-light); }
+.ag-step-act .ag-step-head { color: var(--blue); }
+.ag-tool-name { font-family: monospace; background: rgba(91,143,249,.15); padding: 2px 8px; border-radius: 4px; }
+.ag-tool-input pre {
+  font-size: 11px; color: var(--text-dim);
+  white-space: pre-wrap; word-break: break-all;
+}
+
+/* 观察结果 */
+.ag-step-observe { background: var(--green-light); }
+.ag-step-observe .ag-step-head { color: var(--green); }
+
+/* 错误 */
+.ag-step-error { background: var(--pink-light); }
+.ag-step-error .ag-step-head { color: var(--pink); }
+
+/* 最终答案 */
+.ag-final {
+  background: linear-gradient(135deg, var(--green-light), rgba(82,196,26,.05));
+  border: 1px solid rgba(82,196,26,.25);
+  border-radius: var(--radius); overflow: hidden;
+  animation: cardIn .3s ease;
+}
+.ag-final-head {
+  padding: 12px 16px; font-weight: 700; font-size: 14px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ag-final-steps {
+  font-size: 11px; color: var(--text-dim); font-weight: 400;
+}
+.ag-final-body {
+  padding: 0 16px 12px; font-size: 13px; line-height: 1.8;
+  color: var(--text);
+}
+.ag-final-body h3 { font-size: 15px; margin: 14px 0 6px; color: var(--text); }
+.ag-final-body h4 { font-size: 13px; margin: 10px 0 4px; color: var(--text); }
+.ag-final-body li { margin: 4px 0 4px 16px; }
+.ag-final-body strong { color: var(--orange); }
+
+.ag-save-btn {
+  display: block; width: calc(100% - 32px); margin: 0 16px 14px;
+  padding: 10px; border-radius: 10px; border: 1px solid var(--green);
+  background: transparent; color: var(--green); font-size: 13px;
+  font-weight: 600; font-family: inherit; cursor: pointer;
+  transition: all .15s;
+}
+.ag-save-btn:active { background: var(--green); color: #fff; }
+
+/* Agent 模式选择按钮 */
+.ag-mode-bar {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.ag-mode-btn {
+  flex: 1; padding: 8px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--input-border); background: var(--card);
+  color: var(--text-dim); font-size: 12px; font-weight: 600;
+  font-family: inherit; cursor: pointer; transition: all .15s;
+  text-align: center;
+}
+.ag-mode-btn.active {
+  border-color: var(--purple); color: var(--purple);
+  background: var(--purple-light);
+}
+.ag-mode-btn .mode-icon { font-size: 16px; display: block; margin-bottom: 2px; }

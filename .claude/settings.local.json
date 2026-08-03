@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m 'v2: Agent 架构重构 — 手写 ReAct Loop + 多 Agent 编排 + Self-Reflection *)"
+    ]
+  }
+}

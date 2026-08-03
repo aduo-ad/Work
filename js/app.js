@@ -669,11 +669,66 @@ document.addEventListener('keydown', (e) => {
 
 // ==================== 研究院 ====================
 const RESEARCH_KEY = 'qiuzhao_research_v1';
-const API_KEY_STORAGE = 'qiuzhao_gemini_key';
+const API_KEY_STORAGE = 'qiuzhao_ai_key';
+const AI_PROVIDER_STORAGE = 'qiuzhao_ai_provider';
 
 let researchNotes = [];
-let geminiApiKey = '';
-let currentAiResult = null; // 临时存储 AI 结果，供保存
+let aiApiKey = '';
+let aiProvider = 'deepseek';
+let currentAiResult = null;
+
+// Agent 系统桥接 API
+window.__getAiProvider = () => aiProvider;
+window.__getAiApiKey = () => aiApiKey;
+window.__showToast = (msg) => showToast(msg);
+window.__openSettings = () => openSettings();
+window.__addResearchNote = (company, content, source) => {
+  researchNotes.unshift({
+    id: uid(),
+    company,
+    content,
+    source: source || 'Agent 分析',
+    date: new Date().toISOString().slice(0, 10)
+  });
+  saveResearchNotes();
+  renderResearch();
+};
+
+// AI 提供商配置
+const AI_PROVIDERS = {
+  deepseek: {
+    name: 'DeepSeek',
+    icon: '🚀',
+    hint: '国内直连，免 VPN',
+    getKeyUrl: 'https://platform.deepseek.com/api_keys',
+    call: async (key, prompt) => {
+      const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 1024 })
+      });
+      if (!resp.ok) { const err = await resp.json().catch(()=>({})); throw new Error(err.error?.message || `请求失败(${resp.status})`); }
+      const data = await resp.json();
+      return data.choices?.[0]?.message?.content || '（未获取到结果）';
+    }
+  },
+  gemini: {
+    name: 'Gemini',
+    icon: '🤖',
+    hint: '需 VPN，信息更新',
+    getKeyUrl: 'https://aistudio.google.com/apikey',
+    call: async (key, prompt) => {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 1024 } })
+      });
+      if (!resp.ok) { const err = await resp.json().catch(()=>({})); throw new Error(err.error?.message || `请求失败(${resp.status})`); }
+      const data = await resp.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || '（未获取到结果）';
+    }
+  }
+}; // 临时存储 AI 结果，供保存
 
 // 搜索源配置
 const SEARCH_SOURCES = {
@@ -720,16 +775,23 @@ function saveResearchNotes() {
 }
 
 function loadApiKey() {
-  try {
-    return localStorage.getItem(API_KEY_STORAGE) || '';
-  } catch (e) { return ''; }
+  try { return localStorage.getItem(API_KEY_STORAGE) || ''; }
+  catch (e) { return ''; }
 }
 
 function saveApiKey(key) {
-  try {
-    localStorage.setItem(API_KEY_STORAGE, key.trim());
-    return true;
-  } catch (e) { return false; }
+  try { localStorage.setItem(API_KEY_STORAGE, key.trim()); return true; }
+  catch (e) { return false; }
+}
+
+function loadAiProvider() {
+  try { return localStorage.getItem(AI_PROVIDER_STORAGE) || 'deepseek'; }
+  catch (e) { return 'deepseek'; }
+}
+
+function saveAiProvider(provider) {
+  try { localStorage.setItem(AI_PROVIDER_STORAGE, provider); return true; }
+  catch (e) { return false; }
 }
 
 // 多源搜索 — 在新标签页打开
@@ -749,24 +811,28 @@ function searchCompany(sources) {
   }
 }
 
-// Gemini AI 分析
+// AI 分析入口
 async function aiAnalyze() {
   const query = $('#research-input').value.trim();
   if (!query) { showToast('请先输入公司名称'); return; }
-  if (!geminiApiKey) {
-    showToast('⚠️ 请先在设置中配置 Gemini API Key');
+  if (!aiApiKey) {
+    showToast('⚠️ 请先在设置中配置 AI API Key');
     openSettings();
     return;
   }
 
+  const provider = AI_PROVIDERS[aiProvider];
+  if (!provider) { showToast('❌ AI 引擎配置错误'); return; }
+
   const aiSection = $('#ai-section');
   const aiContent = $('#ai-content');
   const aiResultCard = $('#ai-result-card');
+  const saveBtn = aiResultCard?.querySelector('.btn-ai-save');
 
   aiSection.style.display = 'block';
   aiContent.className = 'ai-content loading';
-  aiContent.innerHTML = '<span class="ai-spinner"></span>正在分析…';
-  aiResultCard.querySelector('.btn-ai-save').style.display = 'none';
+  aiContent.innerHTML = `<span class="ai-spinner"></span>${provider.icon} 正在用 ${provider.name} 分析…`;
+  if (saveBtn) saveBtn.style.display = 'none';
 
   const prompt = `你是一位资深的校招求职顾问。请帮我调研这家公司，直接给出以下结构的分析（每条1-3句话，力求信息准确）：
 
@@ -794,41 +860,24 @@ async function aiAnalyze() {
 ⚠️ 如果信息不确定，请标注「据网络信息」。控制在500字以内。`;
 
   try {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 }
-        })
-      }
-    );
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error?.message || `请求失败 (${resp.status})`);
-    }
-
-    const data = await resp.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '（未获取到结果）';
+    const text = await provider.call(aiApiKey, prompt);
 
     currentAiResult = {
       company: query,
       content: text,
       date: new Date().toISOString().slice(0, 10),
-      source: 'Gemini AI'
+      source: `${provider.name} AI`
     };
 
     aiContent.className = 'ai-content';
     aiContent.textContent = text;
-    aiResultCard.querySelector('.btn-ai-save').style.display = '';
+    if (saveBtn) saveBtn.style.display = '';
 
   } catch (e) {
     aiContent.className = 'ai-content';
-    aiContent.innerHTML = `<div class="ai-error">❌ ${escapeHTML(e.message)}<br><small>请检查 API Key 是否正确、网络是否通畅</small></div>`;
-    aiResultCard.querySelector('.btn-ai-save').style.display = 'none';
+    const tip = aiProvider === 'gemini' ? '<br><small>Gemini 在国内需要 VPN，也可以试试 DeepSeek</small>' : '<br><small>请检查 API Key 是否正确</small>';
+    aiContent.innerHTML = `<div class="ai-error">❌ ${escapeHTML(e.message)}${tip}</div>`;
+    if (saveBtn) saveBtn.style.display = 'none';
     currentAiResult = null;
   }
 }
@@ -891,7 +940,8 @@ function renderResearch() {
 function init() {
   apps = loadApps();
   researchNotes = loadResearchNotes();
-  geminiApiKey = loadApiKey();
+  aiApiKey = loadApiKey();
+  aiProvider = loadAiProvider();
   buildStagePicker();
   initTheme();
   renderAll();
@@ -909,15 +959,36 @@ function init() {
     chip.addEventListener('click', () => searchCompany([chip.dataset.source]));
   });
 
-  // AI 分析按钮
-  $('#btn-ai-analyze').addEventListener('click', aiAnalyze);
+  // AI 分析按钮（兼容旧版）
+  const aiBtn = $('#btn-ai-analyze');
+  if (aiBtn) aiBtn.addEventListener('click', aiAnalyze);
+
+  // 快捷来源按钮 — 点击时先填入搜索词
+  $$('#source-chips .source-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const input = $('#research-input');
+      if (input && !input.value.trim()) {
+        input.focus();
+        return;
+      }
+      searchCompany([chip.dataset.source]);
+    });
+  });
 
   // 保存 AI 结果
-  $('#ai-result-card').querySelector('.btn-ai-save').addEventListener('click', saveAiResult);
+  const saveBtn = $('#ai-result-card')?.querySelector('.btn-ai-save');
+  if (saveBtn) saveBtn.addEventListener('click', saveAiResult);
 
   // 回车触发 AI 分析
   $('#research-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') aiAnalyze();
+  });
+
+  // AI 提供商切换
+  $('#ai-provider-select').addEventListener('change', (e) => {
+    aiProvider = e.target.value;
+    saveAiProvider(aiProvider);
+    updateApiKeyUI();
   });
 
   // API Key 保存
@@ -926,7 +997,7 @@ function init() {
     const key = $('#f-apikey').value.trim();
     if (key) {
       saveApiKey(key);
-      geminiApiKey = key;
+      aiApiKey = key;
       updateApiKeyUI();
       showToast('✅ API Key 已保存');
       $('#f-apikey').value = '';
@@ -936,13 +1007,21 @@ function init() {
 
 function updateApiKeyUI() {
   const status = $('#api-key-status');
-  if (geminiApiKey) {
-    status.textContent = '已设置 ✅';
+  const provider = AI_PROVIDERS[aiProvider];
+  const hintEl = $('#apikey-hint');
+  if (aiApiKey) {
+    status.textContent = `${provider.icon} 已设置 ✅`;
     status.className = 'api-key-status set';
   } else {
     status.textContent = '未设置';
     status.className = 'api-key-status unset';
   }
+  if (hintEl) {
+    hintEl.innerHTML = `免费获取：<a href="${provider.getKeyUrl}" target="_blank" style="color:var(--blue)">${provider.name} 后台</a> → 创建 API Key → 粘贴到这里。仅存储在本地浏览器。${provider.hint}`;
+  }
+  // 同步下拉框
+  const sel = $('#ai-provider-select');
+  if (sel && sel.value !== aiProvider) sel.value = aiProvider;
 }
 
 // 启动
