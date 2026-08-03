@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.__disableMock = () => { window.__qiuzhao_mock = false; };
 
   // ============ LLM 接口（适配 DeepSeek / Gemini） ============
-  function createLLM(forceMock = false) {
+  function createLLM(forceMock = false, mockCompany = '字节跳动') {
     const provider = window.__getAiProvider?.() || 'deepseek';
     const apiKey = window.__getAiApiKey?.() || '';
 
@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (forceMock || isMockEnabled()) {
       chatUI.updateStatus('🧪', 'Mock 测试模式 — 无需 API Key');
       const scenario = window.__mockScenario || 'default';
-      const company = window.__mockCompany || '字节跳动';
+      const company = window.__mockCompany || mockCompany;
       return new MockLLM(scenario, { company, delay: 600, streamDelay: 20 });
     }
 
@@ -335,18 +335,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const query = inputEl?.value.trim();
-    lastQuery = query;
     // 输入 "demo" 或 URL ?mock=1 使用 Mock 模式
     const useMock = query === 'demo' || isMockEnabled();
+    // Mock 模式：demo→字节跳动，否则用实际输入
+    const researchTarget = useMock ? (query === 'demo' ? '字节跳动' : query) : query;
+    lastQuery = researchTarget;
     if (useMock && query === 'demo') {
-      window.__showToast?.('🧪 Mock 模式：模拟完整 Agent 流程，无需 API Key');
+      window.__showToast?.('🧪 Mock 模式：演示 字节跳动 研究流程');
     }
     if (!query) {
       window.__showToast?.('请先输入公司名称');
       return;
     }
 
-    const llm = createLLM(useMock);
+    const llm = createLLM(useMock, researchTarget);
     if (!llm) {
       window.__showToast?.('⚠️ 请先在设置中配置 AI API Key');
       window.__openSettings?.();
@@ -358,7 +360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     abortController = new AbortController();
     setRunning(true);
     chatUI.clear();
-    chatUI.addUserMessage(`分析：${query}`);
+    chatUI.addUserMessage(`分析：${researchTarget}${useMock ? ' (Mock)' : ''}`);
     const mode = window.__agentMode || 'research';
     chatUI.updateStatus('🤖', `正在启动 ${mode} Agent…`);
 
@@ -377,18 +379,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         agentWorker.postMessage({
           type: 'run',
           task: mode === 'research'
-            ? `请全面研究这家公司：${query}。使用 web_search 搜索至少 3 个不同来源。`
+            ? `请全面研究这家公司：${researchTarget}。使用 web_search 搜索至少 3 个不同来源。`
             : (() => {
-                const localKnowledge = memory.query(query);
+                const localKnowledge = memory.query(researchTarget);
                 const hint = localKnowledge.length ? `\n本地知识库已有以下信息，请利用：${JSON.stringify(localKnowledge)}` : '';
-                return `请为 ${query} 制定面试准备方案。${hint}`;
+                return `请为 ${researchTarget} 制定面试准备方案。${hint}`;
               })(),
           provider, apiKey, mode, temperature: mode === 'research' ? 0.5 : 0.6
         });
         // 完成/错误/中止由 worker.onmessage 处理（setRunning 在那里调）
       } else {
         // === 主线程路径（降级 / 复杂模式） ===
-        await runAgent(mode, query, llm, tools, chatUI, abortController);
+        await runAgent(mode, researchTarget, llm, tools, chatUI, abortController);
         chatUI.clearStatus();
         setRunning(false);
         window.__agentAborted = false;
