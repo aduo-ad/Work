@@ -10,6 +10,7 @@ import { ToolRegistry, createDefaultTools } from './core/tools.js';
 import { MemorySystem } from './core/memory.js';
 import { Orchestrator } from './core/orchestrator.js';
 import { AgentChatUI } from './ui/agent-chat.js';
+import { MockLLM, isMockEnabled } from './core/mock-llm.js';
 import {
   createResearchAgent,
   createCompareAgent,
@@ -34,10 +35,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   const chatUI = new AgentChatUI('ag-messages');
   window.__agentChatUI = chatUI; // 暴露给 app.js 的 searchCompany
 
+  // Mock 模式控制台入口
+  window.__enableMock = (scenario, company) => {
+    import('./core/mock-llm.js').then(m => m.enableMock(scenario, company));
+  };
+  window.__disableMock = () => { window.__qiuzhao_mock = false; };
+
   // ============ LLM 接口（适配 DeepSeek / Gemini） ============
-  function createLLM() {
+  function createLLM(forceMock = false) {
     const provider = window.__getAiProvider?.() || 'deepseek';
     const apiKey = window.__getAiApiKey?.() || '';
+
+    // Mock 模式：URL ?mock=1 或公司名 "demo" 或 window.__enableMock()
+    if (forceMock || isMockEnabled()) {
+      chatUI.updateStatus('🧪', 'Mock 测试模式 — 无需 API Key');
+      const scenario = window.__mockScenario || 'default';
+      const company = window.__mockCompany || '字节跳动';
+      return new MockLLM(scenario, { company, delay: 600, streamDelay: 20 });
+    }
 
     if (!apiKey) {
       chatUI.addError('请先在设置（⚙️）中配置 AI API Key');
@@ -249,12 +264,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const query = inputEl?.value.trim();
     lastQuery = query;
+    // 输入 "demo" 或 URL ?mock=1 使用 Mock 模式
+    const useMock = query === 'demo' || isMockEnabled();
+    if (useMock && query === 'demo') {
+      window.__showToast?.('🧪 Mock 模式：模拟完整 Agent 流程，无需 API Key');
+    }
     if (!query) {
       window.__showToast?.('请先输入公司名称');
       return;
     }
 
-    const llm = createLLM();
+    const llm = createLLM(useMock);
     if (!llm) {
       window.__showToast?.('⚠️ 请先在设置中配置 AI API Key');
       window.__openSettings?.();
