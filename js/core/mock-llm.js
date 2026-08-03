@@ -124,6 +124,7 @@ class MockLLM {
 
   /** 非流式调用 */
   async chat(messages, opts = {}) {
+    if (window.__agentAborted || opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     await this._sleep(this._delay, opts.signal);
     const response = this._nextResponse();
     this._updateFakeUsage(response);
@@ -166,9 +167,10 @@ class MockLLM {
 
   _sleep(ms, signal) {
     return new Promise((resolve, reject) => {
-      if (signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
+      if (window.__agentAborted || signal?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return; }
       const timer = setTimeout(resolve, ms);
-      if (signal) signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+      const onAbort = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+      if (signal) signal.addEventListener('abort', onAbort, { once: true });
     });
   }
 }
