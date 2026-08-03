@@ -800,21 +800,23 @@ function saveAiProvider(provider) {
   catch (e) { return false; }
 }
 
-// 多源搜索 — 在新标签页打开
+// 多源搜索 — 只展示链接，不跳转（Agent 模式下由 Agent 自行搜索）
 function searchCompany(sources) {
   const query = $('#research-input').value.trim();
   if (!query) { showToast('请先输入公司名称'); return; }
 
   sources.forEach(srcKey => {
     const src = SEARCH_SOURCES[srcKey];
-    if (src) window.open(src.url(query), '_blank', 'noopener');
+    if (src) {
+      // 不跳转浏览器——直接在 Agent 思考区展示链接
+      const chatUI = window.__agentChatUI;
+      if (chatUI) {
+        chatUI._append(`<div class="ag-step ag-step-observe"><div class="ag-step-head">🔗 ${src.label}</div><div class="ag-step-body"><a href="${src.url(query)}" target="_blank" rel="noopener">${src.url(query)}</a></div></div>`);
+      }
+    }
   });
 
-  if (sources.length === 1) {
-    showToast(`已打开 ${SEARCH_SOURCES[sources[0]].label}`);
-  } else {
-    showToast(`已打开 ${sources.length} 个来源`);
-  }
+  showToast(sources.length === 1 ? `🔗 ${SEARCH_SOURCES[sources[0]].label} 链接已展示` : `🔗 ${sources.length} 个链接已展示`);
 }
 
 // AI 分析入口

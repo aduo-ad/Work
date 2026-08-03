@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   createDefaultTools(tools);
 
   const chatUI = new AgentChatUI('ag-messages');
+  window.__agentChatUI = chatUI; // 暴露给 app.js 的 searchCompany
 
   // ============ LLM 接口（适配 DeepSeek / Gemini） ============
   function createLLM() {
