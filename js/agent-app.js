@@ -35,6 +35,67 @@ document.addEventListener('DOMContentLoaded', async () => {
   const chatUI = new AgentChatUI('ag-messages');
   window.__agentChatUI = chatUI; // 暴露给 app.js 的 searchCompany
 
+  // ============ Web Worker Agent 运行器 ============
+  let agentWorker = null;
+
+  function createAgentWorker() {
+    try {
+      const worker = new Worker('./js/core/agent-worker.js', { type: 'module' });
+      worker.onmessage = (e) => {
+        const msg = e.data;
+        switch (msg.type) {
+          case 'stream':   chatUI.addStreamingThought(msg.step, msg.text); break;
+          case 'streamEnd': chatUI.finalizeStreamingThought(msg.step); break;
+          case 'step':     chatUI.addReasoning(msg.step, msg.reasoning); break;
+          case 'tool':
+            chatUI.addToolCall(msg.step, msg.tool, msg.input);
+            chatUI.addObservation(msg.step, msg.result);
+            break;
+          case 'token':    chatUI.updateTokenBadge(msg.usage, msg.cost); break;
+          case 'complete':
+            chatUI.addFinalAnswer(msg.answer, { steps: msg.steps, forced: msg.forced, usage: msg.usage, cost: msg.cost });
+            chatUI.clearStatus();
+            setRunning(false);
+            break;
+          case 'error':
+            chatUI.addError(msg.message);
+            chatUI.clearStatus();
+            setRunning(false);
+            break;
+          case 'tool_request':
+            // Worker 需要主线程执行 memory 工具
+            handleWorkerToolRequest(worker, msg.id, msg.name, msg.args);
+            break;
+        }
+      };
+      worker.onerror = (e) => {
+        chatUI.addError('Worker 运行异常: ' + (e.message || '未知错误'));
+        chatUI.clearStatus();
+        setRunning(false);
+        terminateWorker();
+      };
+      return worker;
+    } catch (e) {
+      return null; // Worker 不支持，降级到主线程
+    }
+  }
+
+  function terminateWorker() {
+    if (agentWorker) { agentWorker.terminate(); agentWorker = null; }
+  }
+
+  async function handleWorkerToolRequest(worker, id, name, args) {
+    // 在主线程执行 memory 工具，结果发回 Worker
+    const tool = tools.get(name);
+    let result;
+    if (tool) {
+      result = await tool.execute(args);
+    } else {
+      result = { error: `未知工具: ${name}` };
+    }
+    worker.postMessage({ type: 'tool_result', id, result });
+  }
+
   // Mock 模式控制台入口
   window.__enableMock = (scenario, company) => {
     import('./core/mock-llm.js').then(m => m.enableMock(scenario, company));
@@ -255,6 +316,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnRun.addEventListener('click', async () => {
     // 如果正在运行 → 中止
     if (running) {
+      if (agentWorker) {
+        agentWorker.postMessage({ type: 'abort' });
+        terminateWorker();
+        chatUI.updateStatus('⏹️', '已停止');
+        setRunning(false);
+        return;
+      }
       if (abortController) {
         abortController.abort();
         chatUI.updateStatus('⏹️', '正在停止…');
@@ -289,15 +357,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     const mode = window.__agentMode || 'research';
     chatUI.updateStatus('🤖', `正在启动 ${mode} Agent…`);
 
+    // 简单模式（research / interview）→ Web Worker 运行
+    const canUseWorker = (mode === 'research' || mode === 'interview') && !useMock;
+    if (canUseWorker) {
+      terminateWorker();
+      agentWorker = createAgentWorker();
+    }
+
     try {
-      await runAgent(mode, query, llm, tools, chatUI, abortController);
-      chatUI.clearStatus();
+      if (agentWorker) {
+        // === Worker 路径 ===
+        const provider = window.__getAiProvider?.() || 'deepseek';
+        const apiKey = window.__getAiApiKey?.() || '';
+        agentWorker.postMessage({
+          type: 'run',
+          task: mode === 'research'
+            ? `请全面研究这家公司：${query}。使用 web_search 搜索至少 3 个不同来源。`
+            : (() => {
+                const localKnowledge = memory.query(query);
+                const hint = localKnowledge.length ? `\n本地知识库已有以下信息，请利用：${JSON.stringify(localKnowledge)}` : '';
+                return `请为 ${query} 制定面试准备方案。${hint}`;
+              })(),
+          provider, apiKey, mode, temperature: mode === 'research' ? 0.5 : 0.6
+        });
+        // 完成/错误/中止由 worker.onmessage 处理（setRunning 在那里调）
+      } else {
+        // === 主线程路径（降级 / 复杂模式） ===
+        await runAgent(mode, query, llm, tools, chatUI, abortController);
+        chatUI.clearStatus();
+        setRunning(false);
+      }
     } catch (e) {
       chatUI.clearStatus();
       if (e.name !== 'AbortError') chatUI.addError(e.message);
-    } finally {
       setRunning(false);
-      abortController = null;
+    } finally {
+      if (!agentWorker) {
+        abortController = null;
+      }
     }
   });
 
