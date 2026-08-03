@@ -26,6 +26,8 @@
   max-height: 55vh; overflow-y: auto;
   display: flex; flex-direction: column; gap: 10px;
   min-height: 120px;
+  -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
+  overscroll-behavior: contain;       /* 防止滚动穿透 */
 }
 .ag-container:empty::after {
   content: '输入公司名称，选择 Agent 模式开始分析';

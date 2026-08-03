@@ -102,9 +102,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ============ Agent 模式选择 ============
   let currentMode = 'research'; // research | compare | interview | full
 
-  document.querySelectorAll('.ag-mode-btn').forEach(btn => {
+  document.querySelectorAll('.ag-tab').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.ag-mode-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.ag-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentMode = btn.dataset.mode;
     });
@@ -113,6 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ============ 执行按钮 ============
   document.getElementById('btn-agent-run').addEventListener('click', async () => {
     const query = document.getElementById('research-input').value.trim();
+    lastQuery = query;
     if (!query) {
       window.__showToast?.('请先输入公司名称');
       return;
@@ -138,10 +139,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 保存回调
+  // 保存回调（用 lastQuery 捕获闭包外的变量）
+  let lastQuery = '';
   chatUI.onSave((text) => {
-    memory.save(query, 'agent_analysis', text);
-    window.__addResearchNote?.(query, text, 'Agent 分析');
+    const q = lastQuery || '未知公司';
+    memory.save(q, 'agent_analysis', text);
+    window.__addResearchNote?.(q, text, 'Agent 分析');
     window.__showToast?.('💾 已保存到研究笔记');
   });
 });

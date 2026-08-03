@@ -125,11 +125,18 @@ class AgentChatUI {
   /** 简单的 Markdown 渲染 */
   _renderMarkdown(text) {
     let html = this._esc(text);
+    // 标题
     html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
     html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+    // 无序列表
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    // 有序列表
+    html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+    // 粗体
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\n\n/g, '<br><br>');
+    // 换行：所有换行 → <br>，连续多个 → 段落间距
+    html = html.replace(/\n/g, '<br>');
+    html = html.replace(/(<br>\s*){3,}/g, '<br><br>');
     return html;
   }
 
