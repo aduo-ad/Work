@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qiuzhao-v4';
+const CACHE_NAME = 'qiuzhao-v5';
 const ASSETS = [
   './index.html',
   './css/style.css',
