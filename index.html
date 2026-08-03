@@ -65,10 +65,10 @@
     <div class="view" id="view-research">
       <!-- Agent Tab 切换 -->
       <div class="ag-tabs">
-        <button class="ag-tab active" data-mode="research">🔬 深度研究</button>
-        <button class="ag-tab" data-mode="compare">⚖️ 对比分析</button>
-        <button class="ag-tab" data-mode="interview">🎯 面试准备</button>
-        <button class="ag-tab" data-mode="full">🔄 全流程</button>
+        <button class="ag-tab active" data-mode="research" onclick="window.__setAgentMode('research',this)">🔬 深度研究</button>
+        <button class="ag-tab" data-mode="compare" onclick="window.__setAgentMode('compare',this)">⚖️ 对比分析</button>
+        <button class="ag-tab" data-mode="interview" onclick="window.__setAgentMode('interview',this)">🎯 面试准备</button>
+        <button class="ag-tab" data-mode="full" onclick="window.__setAgentMode('full',this)">🔄 全流程</button>
       </div>
 
       <!-- 搜索区 -->

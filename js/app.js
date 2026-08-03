@@ -680,6 +680,12 @@ let currentAiResult = null;
 // Agent 系统桥接 API
 window.__getAiProvider = () => aiProvider;
 window.__getAiApiKey = () => aiApiKey;
+window.__agentMode = 'research'; // Agent 当前模式
+window.__setAgentMode = function(mode, el) {
+  window.__agentMode = mode;
+  document.querySelectorAll('.ag-tab').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+};
 window.__showToast = (msg) => showToast(msg);
 window.__openSettings = () => openSettings();
 window.__addResearchNote = (company, content, source) => {

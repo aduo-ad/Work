@@ -99,16 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return null;
   }
 
-  // ============ Agent 模式选择 ============
-  let currentMode = 'research'; // research | compare | interview | full
-
-  document.querySelectorAll('.ag-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.ag-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentMode = btn.dataset.mode;
-    });
-  });
+  // ============ Agent 模式（由 app.js 的 window.__setAgentMode 控制） ============
 
   // ============ 执行按钮 ============
   document.getElementById('btn-agent-run').addEventListener('click', async () => {
@@ -128,10 +119,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     chatUI.clear();
     chatUI.addUserMessage(`分析：${query}`);
-    chatUI.updateStatus('🤖', `正在启动 ${currentMode} Agent…`);
+    const mode = window.__agentMode || 'research';
+    chatUI.updateStatus('🤖', `正在启动 ${mode} Agent…`);
 
     try {
-      await runAgent(currentMode, query, llm, tools, chatUI);
+      await runAgent(mode, query, llm, tools, chatUI);
       chatUI.clearStatus();
     } catch (e) {
       chatUI.clearStatus();

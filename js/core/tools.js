@@ -91,9 +91,9 @@ export function createDefaultTools(registry) {
         xiaohongshu: `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(args.company + ' 秋招')}`
       };
       const url = urls[args.source];
-      // 新标签页打开
-      if (typeof window !== 'undefined') window.open(url, '_blank', 'noopener');
-      return `已在浏览器打开 ${args.source} 搜索「${args.company}」。请观察搜索结果后自行提取关键信息。搜索URL: ${url}`;
+      // 不打开浏览器——Agent 在报告中引用链接，用户自行查看
+      const hints = { niuke: '面经/笔试/面试流程/offer薪资', maimai: '薪资/加班/内部评价', zhihu: '公司文化/发展前景/工作体验', kanzhun: '薪资结构/职级/涨幅', xiaohongshu: '办公环境/氛围/最新动态' };
+      return args.source + ' 搜索「' + args.company + '」: ' + url + ' (提示: ' + (hints[args.source] || '综合信息') + ')';
     }
   });
 
