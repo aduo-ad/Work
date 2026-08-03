@@ -42,6 +42,20 @@
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
 
+/* Token 徽标（状态栏中） */
+.ag-token-badge {
+  margin-left: auto; font-size: 11px; font-weight: 400;
+  opacity: .85; white-space: nowrap;
+}
+
+/* Token 汇总（最终报告顶部） */
+.ag-token-summary {
+  padding: 8px 16px; margin: 0 16px;
+  background: rgba(255,255,255,.06);
+  border-radius: 8px; font-size: 11px; color: var(--text-dim);
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+
 /* Agent 消息气泡 */
 .ag-msg { display: flex; }
 .ag-msg-user { justify-content: flex-end; }

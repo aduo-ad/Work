@@ -76,7 +76,7 @@ ${customContext}`;
    * @param {Function} callbacks.onComplete   - 完成回调
    * @param {Function} callbacks.onError      - 错误回调
    */
-  async run(task, { onStep, onToolCall, onComplete, onError, onStream, onStreamEnd } = {}) {
+  async run(task, { onStep, onToolCall, onComplete, onError, onStream, onStreamEnd, onTokenUsage } = {}) {
     this.trace = [];
     this._aborted = false;
 
@@ -85,6 +85,7 @@ ${customContext}`;
       { role: 'user', content: task }
     ];
     const useStream = !!onStream && typeof this.llm.chatStream === 'function';
+    this._totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
     for (let step = 0; step < this.maxSteps; step++) {
       if (this._aborted) break;
@@ -105,6 +106,15 @@ ${customContext}`;
         }
         const parsed = this._parseResponse(rawResponse);
 
+        // Token 追踪：累加本次调用的 token 消耗
+        if (this.llm.lastUsage) {
+          const u = this.llm.lastUsage;
+          this._totalUsage.prompt_tokens += u.prompt_tokens || 0;
+          this._totalUsage.completion_tokens += u.completion_tokens || 0;
+          this._totalUsage.total_tokens += u.total_tokens || 0;
+          onTokenUsage?.(this._totalUsage, this.llm.cost || null);
+        }
+
         this.trace.push({
           step: step + 1,
           type: 'think',
@@ -124,8 +134,8 @@ ${customContext}`;
         if (parsed.action === 'FINISH') {
           const finalAnswer = parsed.answer || parsed.reasoning || rawResponse;
           this.trace.push({ step: step + 1, type: 'finish', answer: finalAnswer });
-          onComplete?.({ answer: finalAnswer, trace: this.trace, steps: step + 1 });
-          return { answer: finalAnswer, trace: this.trace, steps: step + 1 };
+          onComplete?.({ answer: finalAnswer, trace: this.trace, steps: step + 1, usage: this._totalUsage, cost: this.llm.cost });
+          return { answer: finalAnswer, trace: this.trace, steps: step + 1, usage: this._totalUsage, cost: this.llm.cost };
         }
 
         // ====== Step 3: ACT（执行工具） ======
@@ -174,8 +184,8 @@ ${customContext}`;
       const rawResponse = await this.llm.chat(messages, { temperature: this.temperature });
       const parsed = this._parseResponse(rawResponse);
       const answer = parsed.answer || rawResponse;
-      onComplete?.({ answer, trace: this.trace, steps: this.maxSteps, forced: true });
-      return { answer, trace: this.trace, steps: this.maxSteps, forced: true };
+      onComplete?.({ answer, trace: this.trace, steps: this.maxSteps, forced: true, usage: this._totalUsage, cost: this.llm.cost });
+      return { answer, trace: this.trace, steps: this.maxSteps, forced: true, usage: this._totalUsage, cost: this.llm.cost };
     } catch (e) {
       const msg = 'Agent 执行超时，请稍后重试';
       onError?.({ error: msg });

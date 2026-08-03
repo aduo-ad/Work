@@ -45,9 +45,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // DeepSeek 接口
+    // 成本常量（元/百万 token）
+    const COST = { deepseek: { input: 1, output: 2 }, gemini: { input: 0.5, output: 1.5 } };
+
     if (provider === 'deepseek') {
-      return {
+      const llm = {
         name: 'DeepSeek',
+        cost: COST.deepseek,
+        lastUsage: null, // { prompt_tokens, completion_tokens, total_tokens }
+
         async chat(messages, opts = {}) {
           const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
@@ -64,6 +70,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
           }
           const data = await resp.json();
+          const u = data.usage;
+          llm.lastUsage = u ? { prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens, total_tokens: u.total_tokens } : null;
           return data.choices?.[0]?.message?.content || '';
         },
 
@@ -109,18 +117,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                   fullText += delta;
                   onChunk?.(delta, fullText);
                 }
+                if (json.usage) {
+                  llm.lastUsage = { prompt_tokens: json.usage.prompt_tokens, completion_tokens: json.usage.completion_tokens, total_tokens: json.usage.total_tokens };
+                }
               } catch (e) { /* 跳过解析失败的行 */ }
             }
           }
           return fullText;
         }
       };
+      return llm;
     }
 
     // Gemini 接口
     if (provider === 'gemini') {
-      return {
+      const llm = {
         name: 'Gemini',
+        cost: COST.gemini,
+        lastUsage: null,
+
         async chat(messages, opts = {}) {
           const prompt = messages.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
           const resp = await fetch(
@@ -139,6 +154,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
           }
           const data = await resp.json();
+          const u = data.usageMetadata;
+          llm.lastUsage = u ? { prompt_tokens: u.promptTokenCount, completion_tokens: u.candidatesTokenCount, total_tokens: u.totalTokenCount } : null;
           return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         },
 
@@ -184,12 +201,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                   fullText += text;
                   onChunk?.(text, fullText);
                 }
+                if (json.usageMetadata) {
+                  llm.lastUsage = { prompt_tokens: json.usageMetadata.promptTokenCount, completion_tokens: json.usageMetadata.candidatesTokenCount, total_tokens: json.usageMetadata.totalTokenCount };
+                }
               } catch (e) { /* 跳过 */ }
             }
           }
           return fullText;
         }
       };
+      return llm;
     }
 
     return null;
@@ -241,7 +262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function runAgent(mode, query, llm, tools, chatUI) {
   const memory = window.__agentMemory;
 
-  // 通用流式回调（带 addReasoning 去重）
+  // 通用流式回调（带 addReasoning 去重 + token 追踪）
   function streamCallbacks(prefix = '') {
     let streaming = false;
     return {
@@ -253,7 +274,9 @@ async function runAgent(mode, query, llm, tools, chatUI) {
         streaming = false;
         chatUI.finalizeStreamingThought(step);
       },
-      // 流式时跳过 addReasoning（流式卡片已展示思考过程）
+      onTokenUsage: (usage, cost) => {
+        chatUI.updateTokenBadge(usage, cost);
+      },
       makeOnStep: (customFn) => (s) => {
         if (!streaming) {
           if (customFn) customFn(s);
@@ -276,7 +299,7 @@ async function runAgent(mode, query, llm, tools, chatUI) {
         onStreamEnd: sc.onStreamEnd,
         onStep:      sc.makeOnStep(),
         onToolCall:  sc.makeOnToolCall(),
-        onComplete:  (r) => chatUI.addFinalAnswer(r.answer, { steps: r.steps, forced: r.forced }),
+        onComplete:  (r) => chatUI.addFinalAnswer(r.answer, { steps: r.steps, forced: r.forced, usage: r.usage, cost: r.cost }),
         onError:     (e) => chatUI.addError(e.error)
       });
       break;
@@ -320,7 +343,7 @@ async function runAgent(mode, query, llm, tools, chatUI) {
         onStreamEnd: sc.onStreamEnd,
         onStep:      sc.makeOnStep(),
         onToolCall:  sc.makeOnToolCall(),
-        onComplete:  (r) => chatUI.addFinalAnswer(r.answer, { steps: r.steps }),
+        onComplete:  (r) => chatUI.addFinalAnswer(r.answer, { steps: r.steps, usage: r.usage, cost: r.cost }),
         onError:     (e) => chatUI.addError(e.error)
       });
       break;
@@ -349,7 +372,12 @@ async function runAgent(mode, query, llm, tools, chatUI) {
         { onStream: sc3.onStream, onStreamEnd: sc3.onStreamEnd, onStep: sc3.makeOnStep((s) => chatUI.addReasoning(s.step, `[修正] ${s.reasoning}`)), onToolCall: sc3.makeOnToolCall() }
       );
 
-      chatUI.addFinalAnswer(r2.answer, { steps: r1.steps + c1.steps + r2.steps });
+      const fullUsage = {
+        prompt_tokens: (r1.usage?.prompt_tokens || 0) + (c1.usage?.prompt_tokens || 0) + (r2.usage?.prompt_tokens || 0),
+        completion_tokens: (r1.usage?.completion_tokens || 0) + (c1.usage?.completion_tokens || 0) + (r2.usage?.completion_tokens || 0),
+        total_tokens: (r1.usage?.total_tokens || 0) + (c1.usage?.total_tokens || 0) + (r2.usage?.total_tokens || 0)
+      };
+      chatUI.addFinalAnswer(r2.answer, { steps: r1.steps + c1.steps + r2.steps, usage: fullUsage, cost: llm.cost });
       break;
     }
   }

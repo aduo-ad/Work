@@ -26,20 +26,50 @@ class AgentChatUI {
     `);
   }
 
-  /** Agent 状态条 — 显示当前进行到哪一步 */
-  updateStatus(icon, text) {
+  /** Agent 状态条 — 显示当前进度 + token 消耗 */
+  updateStatus(icon, text, tokenInfo) {
     let el = this.container.querySelector('.ag-status');
     if (!el) {
       el = document.createElement('div');
       el.className = 'ag-status';
-      this.container.appendChild(el);
+      this.container.insertBefore(el, this.container.firstChild);
     }
-    el.innerHTML = `<span>${icon}</span> <span>${this._esc(text)}</span>`;
+    let html = `<span>${icon}</span> <span>${this._esc(text)}</span>`;
+    if (tokenInfo && tokenInfo.total_tokens > 0) {
+      const costStr = tokenInfo.cost ? this._formatCost(tokenInfo.usage, tokenInfo.cost) : '';
+      html += `<span class="ag-token-badge">📊 ${tokenInfo.usage.total_tokens} tokens${costStr ? ' · ' + costStr : ''}</span>`;
+    }
+    el.innerHTML = html;
     this._scroll();
   }
+  /** 只更新状态栏中的 token 徽标（不覆盖文字） */
+  updateTokenBadge(usage, cost) {
+    if (!usage || usage.total_tokens <= 0) return;
+    let el = this.container.querySelector('.ag-status');
+    if (!el) { this.updateStatus('🤖', 'Agent 思考中…'); el = this.container.querySelector('.ag-status'); }
+    if (!el) return;
+    let badge = el.querySelector('.ag-token-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'ag-token-badge';
+      el.appendChild(badge);
+    }
+    const costStr = cost ? this._formatCost(usage, cost) : '';
+    badge.textContent = `📊 ${usage.total_tokens} tokens${costStr ? ' · ' + costStr : ''}`;
+  }
+
   clearStatus() {
     const el = this.container.querySelector('.ag-status');
     if (el) el.remove();
+  }
+
+  /** 格式化费用 */
+  _formatCost(usage, cost) {
+    if (!cost || !usage) return '';
+    const yuan = (usage.prompt_tokens / 1000000) * cost.input + (usage.completion_tokens / 1000000) * cost.output;
+    if (yuan < 0.001) return '<¥0.001';
+    if (yuan < 0.01) return `≈¥${yuan.toFixed(3)}`;
+    return `≈¥${yuan.toFixed(2)}`;
   }
 
   /** 推理步骤 */
@@ -128,12 +158,26 @@ class AgentChatUI {
 
   /** 最终答案 */
   addFinalAnswer(text, metadata = {}) {
+    // Token 统计行
+    let statsHtml = '';
+    if (metadata.usage && metadata.usage.total_tokens > 0) {
+      const u = metadata.usage;
+      const costStr = metadata.cost ? this._formatCost(u, metadata.cost) : '';
+      statsHtml = `
+        <div class="ag-token-summary">
+          <span>📊 Token: ${u.total_tokens}（提示${u.prompt_tokens} + 生成${u.completion_tokens}）</span>
+          <span>· 步数: ${metadata.steps || '?'}</span>
+          ${costStr ? `<span>· ${costStr}</span>` : ''}
+        </div>`;
+    }
+
     this._append(`
       <div class="ag-final">
         <div class="ag-final-head">
           ✅ 分析完成${metadata.forced ? '（达到最大步数，强制总结）' : ''}
           <span class="ag-final-steps">共 ${metadata.steps || '?'} 步</span>
         </div>
+        ${statsHtml}
         <div class="ag-final-body">${this._renderMarkdown(text)}</div>
         <button class="ag-save-btn">💾 保存到笔记</button>
       </div>
