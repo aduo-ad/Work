@@ -63,7 +63,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               messages,
               temperature: opts.temperature ?? 0.7,
               max_tokens: 2048
-            })
+            }),
+            signal: opts.signal || undefined
           });
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
@@ -86,7 +87,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               temperature: opts.temperature ?? 0.7,
               max_tokens: 2048,
               stream: true
-            })
+            }),
+            signal: opts.signal || undefined
           });
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
@@ -146,7 +148,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: 2048 }
-              })
+              }),
+              signal: opts.signal || undefined
             }
           );
           if (!resp.ok) {
@@ -170,7 +173,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: 2048 }
-              })
+              }),
+              signal: opts.signal || undefined
             }
           );
           if (!resp.ok) {
@@ -218,9 +222,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ============ Agent 模式（由 app.js 的 window.__setAgentMode 控制） ============
 
-  // ============ 执行按钮 ============
-  document.getElementById('btn-agent-run').addEventListener('click', async () => {
-    const query = document.getElementById('research-input').value.trim();
+  // ============ 执行/停止按钮 ============
+  let running = false;
+  let abortController = null;
+  const btnRun = document.getElementById('btn-agent-run');
+  const inputEl = document.getElementById('research-input');
+
+  function setRunning(isRunning) {
+    running = isRunning;
+    btnRun.textContent = isRunning ? '⏹️ 停止' : '🤖 启动Agent';
+    btnRun.classList.toggle('btn-stop', isRunning);
+    if (inputEl) inputEl.disabled = isRunning;
+    // 禁用模式切换
+    document.querySelectorAll('.ag-tab').forEach(b => b.disabled = isRunning);
+  }
+
+  btnRun.addEventListener('click', async () => {
+    // 如果正在运行 → 中止
+    if (running) {
+      if (abortController) {
+        abortController.abort();
+        chatUI.updateStatus('⏹️', '正在停止…');
+      }
+      return;
+    }
+
+    const query = inputEl?.value.trim();
     lastQuery = query;
     if (!query) {
       window.__showToast?.('请先输入公司名称');
@@ -234,17 +261,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    // 创建新的 AbortController
+    abortController = new AbortController();
+    setRunning(true);
     chatUI.clear();
     chatUI.addUserMessage(`分析：${query}`);
     const mode = window.__agentMode || 'research';
     chatUI.updateStatus('🤖', `正在启动 ${mode} Agent…`);
 
     try {
-      await runAgent(mode, query, llm, tools, chatUI);
+      await runAgent(mode, query, llm, tools, chatUI, abortController);
       chatUI.clearStatus();
     } catch (e) {
       chatUI.clearStatus();
-      chatUI.addError(e.message);
+      if (e.name !== 'AbortError') chatUI.addError(e.message);
+    } finally {
+      setRunning(false);
+      abortController = null;
     }
   });
 
@@ -259,8 +292,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ============ Agent 执行 ============
-async function runAgent(mode, query, llm, tools, chatUI) {
+async function runAgent(mode, query, llm, tools, chatUI, abortController) {
   const memory = window.__agentMemory;
+  // 注入 AbortController 到 Agent
+  function prepareAgent(agent) {
+    agent.setAbortController(abortController);
+    return agent;
+  }
 
   // 通用流式回调（带 addReasoning 去重 + token 追踪）
   function streamCallbacks(prefix = '') {
@@ -293,7 +331,7 @@ async function runAgent(mode, query, llm, tools, chatUI) {
   switch (mode) {
     case 'research': {
       const sc = streamCallbacks();
-      const agent = createResearchAgent(tools, llm);
+      const agent = prepareAgent(createResearchAgent(tools, llm);)
       await agent.run(`请全面研究这家公司：${query}。使用 web_search 搜索至少 3 个不同来源。`, {
         onStream:    sc.onStream,
         onStreamEnd: sc.onStreamEnd,
@@ -307,8 +345,8 @@ async function runAgent(mode, query, llm, tools, chatUI) {
 
     case 'compare': {
       const sc1 = streamCallbacks();
-      const researcher = createResearchAgent(tools, llm);
-      const comparer = createCompareAgent(tools, llm);
+      const researcher = prepareAgent(createResearchAgent(tools, llm);)
+      const comparer = prepareAgent(createCompareAgent(tools, llm);)
 
       chatUI.updateStatus('🔬', '研究 Agent 工作中…');
       const researchResult = await researcher.run(
@@ -332,7 +370,7 @@ async function runAgent(mode, query, llm, tools, chatUI) {
 
     case 'interview': {
       const sc = streamCallbacks();
-      const agent = createInterviewAgent(tools, llm);
+      const agent = prepareAgent(createInterviewAgent(tools, llm);)
       const localKnowledge = memory.query(query);
       const knowledgeHint = localKnowledge.length
         ? `\n本地知识库已有以下信息，请利用：${JSON.stringify(localKnowledge)}`
@@ -350,8 +388,8 @@ async function runAgent(mode, query, llm, tools, chatUI) {
     }
 
     case 'full': {
-      const researcher = createResearchAgent(tools, llm);
-      const critic = createCriticAgent(tools, llm);
+      const researcher = prepareAgent(createResearchAgent(tools, llm);)
+      const critic = prepareAgent(createCriticAgent(tools, llm);)
 
       const sc1 = streamCallbacks();
       chatUI.updateStatus('🔬', '研究 Agent 搜集信息…');

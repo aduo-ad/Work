@@ -86,6 +86,7 @@ ${customContext}`;
     ];
     const useStream = !!onStream && typeof this.llm.chatStream === 'function';
     this._totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const signal = this._abortController?.signal;
 
     for (let step = 0; step < this.maxSteps; step++) {
       if (this._aborted) break;
@@ -97,12 +98,12 @@ ${customContext}`;
           onStream(step + 1, ''); // 通知 UI：开始流式思考
           rawResponse = await this.llm.chatStream(
             messages,
-            { temperature: this.temperature },
+            { temperature: this.temperature, signal },
             (chunk, fullText) => onStream(step + 1, fullText)
           );
           onStreamEnd?.(step + 1, rawResponse);
         } else {
-          rawResponse = await this.llm.chat(messages, { temperature: this.temperature });
+          rawResponse = await this.llm.chat(messages, { temperature: this.temperature, signal });
         }
         const parsed = this._parseResponse(rawResponse);
 
@@ -163,6 +164,13 @@ ${customContext}`;
         });
 
       } catch (e) {
+        // AbortError：用户主动中止，不恢复
+        if (e.name === 'AbortError') {
+          this.trace.push({ step: step + 1, type: 'abort' });
+          onComplete?.({ answer: '⏹️ 已停止', trace: this.trace, steps: step + 1, aborted: true });
+          return { answer: '⏹️ 已停止', trace: this.trace, steps: step + 1, aborted: true };
+        }
+
         this.trace.push({ step: step + 1, type: 'error', error: e.message });
         onError?.({ step: step + 1, error: e.message });
 
@@ -181,7 +189,7 @@ ${customContext}`;
     });
 
     try {
-      const rawResponse = await this.llm.chat(messages, { temperature: this.temperature });
+      const rawResponse = await this.llm.chat(messages, { temperature: this.temperature, signal });
       const parsed = this._parseResponse(rawResponse);
       const answer = parsed.answer || rawResponse;
       onComplete?.({ answer, trace: this.trace, steps: this.maxSteps, forced: true, usage: this._totalUsage, cost: this.llm.cost });
@@ -193,9 +201,17 @@ ${customContext}`;
     }
   }
 
+  /** 设置中止控制器（由调用方在 run() 前传入） */
+  setAbortController(controller) {
+    this._abortController = controller;
+  }
+
   /** 中止执行 */
   abort() {
     this._aborted = true;
+    if (this._abortController) {
+      this._abortController.abort();
+    }
   }
 
   /** 解析 LLM 返回的 JSON */

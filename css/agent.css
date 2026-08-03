@@ -2,6 +2,13 @@
    研究院 — Agent 对话界面样式
    ========================================== */
 
+/* 启动/停止按钮 */
+.btn-stop {
+  background: var(--pink) !important;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.btn-stop:active { background: #e0485a !important; }
+
 /* Agent Tab 切换 */
 .ag-tabs {
   display: flex; gap: 4px; margin-bottom: 14px;
@@ -17,6 +24,9 @@
 .ag-tab.active {
   background: linear-gradient(135deg, var(--orange), var(--pink));
   color: #fff;
+}
+.ag-tab:disabled {
+  opacity: .5; cursor: not-allowed; pointer-events: none;
 }
 
 /* Agent 对话容器 */
