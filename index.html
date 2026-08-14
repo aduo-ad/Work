@@ -226,6 +226,16 @@
           免费获取：<a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--blue)">DeepSeek 后台</a> → 创建 API Key → 粘贴到这里。仅存储在本地浏览器。国内直连，免 VPN。
         </span>
       </div>
+      <div class="setting-row" style="flex-direction:column;align-items:stretch;gap:8px">
+        <span class="sl">🔎 搜索 API（Tavily）<span class="api-key-status set" id="search-key-status">免费额度</span></span>
+        <div class="api-key-row">
+          <input type="password" id="f-search-key" placeholder="Tavily API Key（可选）…" autocomplete="off" />
+          <button class="btn-sm" id="btn-save-search-key">保存</button>
+        </div>
+        <span style="font-size:10px;color:var(--text-dim)" id="search-key-hint">
+          🔎 实时搜索默认已开启（Tavily 免费额度，无需 Key，Agent 能拿到真实搜索结果）。填 Key 可提升限额：<a href="https://app.tavily.com" target="_blank" style="color:var(--blue)">Tavily 后台</a> 免费注册。仅存储在本地浏览器。
+        </span>
+      </div>
       <div class="setting-row">
         <span class="sl">⌨️ 快捷键</span>
         <span style="font-size:12px;color:var(--text-dim)">

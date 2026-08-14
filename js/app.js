@@ -334,9 +334,12 @@ function bindCardButtons(container) {
 }
 
 function bindKanbanEvents() {
-  // 看板卡片点击 → 编辑
+  // 看板卡片点击 → 编辑（触屏拖拽后抑制紧随的 click）
   $$('.btn-kcard').forEach(card => {
-    card.addEventListener('click', () => openEdit(card.dataset.id));
+    card.addEventListener('click', () => {
+      if (card._suppressClick) { delete card._suppressClick; return; }
+      openEdit(card.dataset.id);
+    });
   });
 
   // 看板列添加按钮
@@ -370,6 +373,9 @@ function bindKanbanEvents() {
     col.addEventListener('dragleave', handleDragLeave);
     col.addEventListener('drop',      handleDrop);
   });
+
+  // 触屏设备：Pointer Events 拖拽兜底
+  setupTouchDrag();
 }
 
 // ==================== 拖拽处理 ====================
@@ -413,6 +419,99 @@ function handleDrop(e) {
     showToast(`已移至「${stageOf(newStage).label}」`);
   }
   dragId = null;
+}
+
+// ==================== 触屏拖拽（Pointer Events） ====================
+// HTML5 Drag & Drop 在 iOS / Android 触屏上不触发，
+// 这里用 Pointer Events 实现拖拽，桌面端仍走原生 DnD。
+const isTouchDevice = () =>
+  (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+
+let touchDrag = null;
+
+function setupTouchDrag() {
+  if (!isTouchDevice()) return;
+  $$('.k-card').forEach(card => {
+    card.setAttribute('draggable', 'false'); // 避免与原生拖拽冲突
+    card.addEventListener('pointerdown', onTouchDragStart);
+  });
+}
+
+function onTouchDragStart(e) {
+  if (e.pointerType === 'mouse') return; // 鼠标走原生 DnD
+  const card = e.currentTarget;
+  touchDrag = {
+    id: card.dataset.id,
+    card,
+    startX: e.clientX,
+    startY: e.clientY,
+    moved: false
+  };
+  try { card.setPointerCapture(e.pointerId); } catch (_) { /* 忽略 */ }
+  card.addEventListener('pointermove', onTouchDragMove);
+  card.addEventListener('pointerup', onTouchDragEnd);
+  card.addEventListener('pointercancel', onTouchDragEnd);
+}
+
+function onTouchDragMove(e) {
+  if (!touchDrag) return;
+  const dx = e.clientX - touchDrag.startX;
+  const dy = e.clientY - touchDrag.startY;
+  if (!touchDrag.moved && Math.hypot(dx, dy) < 8) return; // 阈值防误触
+
+  touchDrag.moved = true;
+  const card = touchDrag.card;
+  card.style.transform = `translate(${dx}px, ${dy}px)`;
+  card.style.zIndex = '999';
+  card.style.position = 'relative';
+  card.style.opacity = '.85';
+  highlightColAt(e.clientX, e.clientY);
+}
+
+function onTouchDragEnd(e) {
+  if (!touchDrag) return;
+  const { card, id, moved } = touchDrag;
+
+  card.style.transform = '';
+  card.style.zIndex = '';
+  card.style.position = '';
+  card.style.opacity = '';
+  card.removeEventListener('pointermove', onTouchDragMove);
+  card.removeEventListener('pointerup', onTouchDragEnd);
+  card.removeEventListener('pointercancel', onTouchDragEnd);
+  $$('.kanban-col').forEach(c => c.classList.remove('drag-over'));
+
+  if (moved) {
+    card._suppressClick = true; // 抑制拖拽后紧跟的 click
+    const col = colAtPoint(e.clientX, e.clientY);
+    if (col) {
+      const newStage = col.dataset.stage;
+      const app = apps.find(a => a.id === id);
+      if (app && app.stage !== newStage) {
+        app.stage = newStage;
+        saveApps();
+        renderAll();
+        showToast(`已移至「${stageOf(newStage).label}」`);
+      }
+    }
+  }
+  // 未移动 → 交由 click 事件打开编辑
+  touchDrag = null;
+}
+
+function colAtPoint(x, y) {
+  const cols = $$('.kanban-col');
+  for (const col of cols) {
+    const r = col.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return col;
+  }
+  return null;
+}
+
+function highlightColAt(x, y) {
+  $$('.kanban-col').forEach(c => c.classList.remove('drag-over'));
+  const col = colAtPoint(x, y);
+  if (col) col.classList.add('drag-over');
 }
 
 // ==================== 视图切换 ====================
@@ -671,15 +770,18 @@ document.addEventListener('keydown', (e) => {
 const RESEARCH_KEY = 'qiuzhao_research_v1';
 const API_KEY_STORAGE = 'qiuzhao_ai_key';
 const AI_PROVIDER_STORAGE = 'qiuzhao_ai_provider';
+const SEARCH_KEY_STORAGE = 'qiuzhao_tavily_key';
 
 let researchNotes = [];
 let aiApiKey = '';
 let aiProvider = 'deepseek';
+let tavilyKey = '';
 let currentAiResult = null;
 
 // Agent 系统桥接 API
 window.__getAiProvider = () => aiProvider;
 window.__getAiApiKey = () => aiApiKey;
+window.__getTavilyKey = () => tavilyKey; // 供 web_search 工具读取
 window.__agentMode = 'research'; // Agent 当前模式
 window.__setAgentMode = function(mode, el) {
   window.__agentMode = mode;
@@ -787,6 +889,16 @@ function loadApiKey() {
 
 function saveApiKey(key) {
   try { localStorage.setItem(API_KEY_STORAGE, key.trim()); return true; }
+  catch (e) { return false; }
+}
+
+function loadTavilyKey() {
+  try { return localStorage.getItem(SEARCH_KEY_STORAGE) || ''; }
+  catch (e) { return ''; }
+}
+
+function saveTavilyKey(key) {
+  try { localStorage.setItem(SEARCH_KEY_STORAGE, key.trim()); return true; }
   catch (e) { return false; }
 }
 
@@ -950,11 +1062,13 @@ function init() {
   researchNotes = loadResearchNotes();
   aiApiKey = loadApiKey();
   aiProvider = loadAiProvider();
+  tavilyKey = loadTavilyKey();
   buildStagePicker();
   initTheme();
   renderAll();
   renderResearch();
   updateApiKeyUI();
+  updateSearchKeyUI();
 
   // 绑定按钮
   $('#add-btn').addEventListener('click', () => openAdd());
@@ -1011,6 +1125,18 @@ function init() {
       $('#f-apikey').value = '';
     }
   });
+
+  // 搜索 Key 保存（可选）
+  $('#btn-save-search-key').addEventListener('click', () => {
+    const key = $('#f-search-key').value.trim();
+    if (key) {
+      saveTavilyKey(key);
+      tavilyKey = key;
+      updateSearchKeyUI();
+      showToast('✅ 搜索 Key 已保存');
+      $('#f-search-key').value = '';
+    }
+  });
 }
 
 function updateApiKeyUI() {
@@ -1030,6 +1156,18 @@ function updateApiKeyUI() {
   // 同步下拉框
   const sel = $('#ai-provider-select');
   if (sel && sel.value !== aiProvider) sel.value = aiProvider;
+}
+
+function updateSearchKeyUI() {
+  const status = $('#search-key-status');
+  if (!status) return;
+  if (tavilyKey) {
+    status.textContent = '已设置 ✅';
+    status.className = 'api-key-status set';
+  } else {
+    status.textContent = '免费额度';
+    status.className = 'api-key-status set';
+  }
 }
 
 // 启动

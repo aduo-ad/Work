@@ -293,6 +293,10 @@ body {
   color: var(--orange); font-size: 11px; margin-top: 4px;
   line-height: 1.4; word-break: break-all;
 }
+/* 触屏设备：禁用浏览器手势，交给 Pointer Events 拖拽 */
+@media (pointer: coarse) {
+  .k-card { touch-action: none; }
+}
 
 .k-empty {
   text-align: center; color: var(--text-dim); font-size: 12px;
