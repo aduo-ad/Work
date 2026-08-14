@@ -25,12 +25,13 @@ class ReActAgent {
    * @param {number} config.maxSteps    - 最大步数（默认 8）
    * @param {number} config.temperature - LLM 温度
    */
-  constructor({ name, role, goal, tools, llm, maxSteps = 8, temperature = 0.7 }) {
+  constructor({ name, role, goal, tools, llm, memory = null, maxSteps = 8, temperature = 0.7 }) {
     this.name = name;
     this.role = role;
     this.goal = goal;
     this.tools = tools;
     this.llm = llm;
+    this.memory = memory;      // MemorySystem（可选），启用 Working Memory 自动压缩
     this.maxSteps = maxSteps;
     this.temperature = temperature;
     this.trace = [];           // 完整的思考-行动-观察链路
@@ -80,18 +81,41 @@ ${customContext}`;
     this.trace = [];
     this._aborted = false;
 
-    const messages = [
-      { role: 'system', content: this.buildSystemPrompt() },
-      { role: 'user', content: task }
-    ];
+    const systemMessage = { role: 'system', content: this.buildSystemPrompt() };
     const useStream = !!onStream && typeof this.llm.chatStream === 'function';
     this._totalUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     const signal = this._abortController?.signal;
+
+    // 对话历史：有 memory 时用其 working 数组作为唯一存储源（自动压缩），
+    // 否则用本地数组（行为与旧版一致）。
+    let history = [];
+    const resetWorking = () => {
+      if (this.memory) {
+        if (typeof this.memory.resetWorking === 'function') this.memory.resetWorking();
+        else this.memory.working.length = 0;
+      } else {
+        history = [];
+      }
+    };
+    const pushMessage = (m) => {
+      if (this.memory) this.memory.addWorking(m);
+      else history.push(m);
+    };
+    // system prompt 始终置于最前，不参与压缩
+    const buildMessages = () => [
+      systemMessage,
+      ...(this.memory ? this.memory.getWorkingContext() : history)
+    ];
+
+    resetWorking();
+    pushMessage({ role: 'user', content: task });
 
     for (let step = 0; step < this.maxSteps; step++) {
       if (this._aborted) break;
 
       try {
+        const messages = buildMessages();
+
         // ====== Step 1: THINK（调用 LLM，优先流式输出） ======
         let rawResponse;
         if (useStream) {
@@ -157,8 +181,8 @@ ${customContext}`;
         });
 
         // ====== Step 4: OBSERVE（添加到对话） ======
-        messages.push({ role: 'assistant', content: rawResponse });
-        messages.push({
+        pushMessage({ role: 'assistant', content: rawResponse });
+        pushMessage({
           role: 'user',
           content: `[工具 "${parsed.action}" 的执行结果]\n${JSON.stringify(toolResult)}`
         });
@@ -175,7 +199,7 @@ ${customContext}`;
         onError?.({ step: step + 1, error: e.message });
 
         // 错误恢复：告知 LLM 出错了，让它调整策略
-        messages.push({
+        pushMessage({
           role: 'user',
           content: `[系统提示] 上一步操作出错: ${e.message}。请调整策略，尝试其他方法或工具。`
         });
@@ -183,6 +207,7 @@ ${customContext}`;
     }
 
     // 达到最大步数 → 强制总结
+    const messages = buildMessages();
     messages.push({
       role: 'user',
       content: '已达到最大操作步数。请基于已获取的信息，立即输出 FINISH 并给出当前最佳答案。'

@@ -104,16 +104,25 @@ class MemorySystem {
     }
   }
 
+  /** 清空 working memory（每个新任务开始时调用） */
+  resetWorking() {
+    this.working = [];
+  }
+
   /** 添加到 working memory（自动压缩） */
   addWorking(entry) {
     this.working.push({ ...entry, timestamp: Date.now() });
     if (this.working.length > this.maxWorkingSize) {
-      // 保留最近 10 条 + 前 5 条摘要
+      // 保留最近 10 条，其余折叠成一条摘要，避免上下文无限膨胀
       const recent = this.working.slice(-10);
       const old = this.working.slice(0, -10);
+      const summary = old
+        .map(e => `${e.role}: ${typeof e.content === 'string' ? e.content : JSON.stringify(e.content)}`)
+        .join('\n')
+        .slice(0, 800);
       const compressed = {
-        role: 'system',
-        content: `[压缩历史] 之前的工具调用结果摘要: ${old.filter(e => e.role === 'tool').map(e => typeof e.content === 'string' ? e.content : JSON.stringify(e.content)).join('; ').slice(0, 500)}`,
+        role: 'user',
+        content: `[历史压缩摘要]\n${summary}`,
         timestamp: Date.now()
       };
       this.working = [compressed, ...recent];
