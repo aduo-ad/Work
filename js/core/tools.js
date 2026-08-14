@@ -70,19 +70,78 @@ class ToolRegistry {
   }
 }
 
+// ============ 实时搜索（Tavily） ============
+// Tavily 是面向 AI Agent 的搜索引擎，支持浏览器端 CORS：
+//   - keyless 免费额度无需 API Key（请求头 X-Tavily-Access-Mode: keyless）
+//   - 可配置 Key（Authorization: Bearer tvly-xxx）提升限额
+//   - 任何失败（CORS / 网络 / 限流）自动回退为搜索链接，工具永不中断
+
+const SOURCE_KEYWORDS = {
+  niuke:        '牛客网 校招 面经 笔试 offer 薪资',
+  maimai:       '脉脉 薪资 加班 内部评价',
+  zhihu:        '知乎 工作体验 待遇 发展前景',
+  kanzhun:      '看准网 薪资结构 职级 涨幅',
+  xiaohongshu:  '小红书 秋招 办公环境 氛围'
+};
+
+function buildSearchQuery(args) {
+  const parts = [args.company, args.job_type, SOURCE_KEYWORDS[args.source] || ''];
+  return parts.filter(Boolean).join(' ');
+}
+
+function getTavilyKey() {
+  return (typeof window !== 'undefined' && typeof window.__getTavilyKey === 'function')
+    ? window.__getTavilyKey()
+    : '';
+}
+
+async function searchTavily(query, apiKey) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  else headers['X-Tavily-Access-Mode'] = 'keyless';
+
+  // 8 秒超时，避免单个搜索拖垮 Agent 循环
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const resp = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, max_results: 5, search_depth: 'basic' }),
+      signal: controller.signal
+    });
+    if (!resp.ok) throw new Error(`Tavily 请求失败 (${resp.status})`);
+
+    const data = await resp.json();
+    const results = data.results || [];
+    if (!results.length) return null;
+    return formatSearchResults(results);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function formatSearchResults(results) {
+  const lines = results.slice(0, 5).map((r, i) =>
+    `${i + 1}. ${r.title || '（无标题）'}\n${(r.content || '').slice(0, 260)}\n🔗 ${r.url}`
+  ).join('\n\n');
+  return `[实时搜索结果 · Tavily]\n${lines}`;
+}
+
 // ============ 内置工具定义 ============
 
 export function createDefaultTools(registry) {
-  // 1. 多源搜索工具
+  // 1. 多源搜索工具（优先 Tavily 实时搜索，失败回退搜索链接）
   registry.register({
     name: 'web_search',
-    description: '搜索公司相关信息，返回搜索链接和摘要。source 可选值: niuke(牛客面经), maimai(脉脉评价), zhihu(知乎), kanzhun(看准网薪资), xiaohongshu(小红书)',
+    description: '搜索公司相关信息，返回真实搜索结果（标题/摘要/链接）。source 可选值: niuke(牛客面经), maimai(脉脉评价), zhihu(知乎), kanzhun(看准网薪资), xiaohongshu(小红书)',
     parameters: {
       company:   { type: 'string',  description: '公司名称', required: true },
       source:    { type: 'string',  description: '搜索来源', required: true, enum: ['niuke', 'maimai', 'zhihu', 'kanzhun', 'xiaohongshu'] },
       job_type:  { type: 'string',  description: '岗位类型，如后端/前端/算法', required: false }
     },
-    execute: (args) => {
+    execute: async (args) => {
       const urls = {
         niuke:   `https://www.nowcoder.com/search?type=post&query=${encodeURIComponent(args.company + ' ' + (args.job_type || '') + ' 秋招 面经')}`,
         maimai:  `https://maimai.cn/search?query=${encodeURIComponent(args.company + ' 薪资待遇')}`,
@@ -90,10 +149,17 @@ export function createDefaultTools(registry) {
         kanzhun: `https://www.kanzhun.com/search/?q=${encodeURIComponent(args.company)}`,
         xiaohongshu: `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(args.company + ' 秋招')}`
       };
-      const url = urls[args.source];
-      // 不打开浏览器——Agent 在报告中引用链接，用户自行查看
       const hints = { niuke: '面经/笔试/面试流程/offer薪资', maimai: '薪资/加班/内部评价', zhihu: '公司文化/发展前景/工作体验', kanzhun: '薪资结构/职级/涨幅', xiaohongshu: '办公环境/氛围/最新动态' };
-      return args.source + ' 搜索「' + args.company + '」: ' + url + ' (提示: ' + (hints[args.source] || '综合信息') + ')';
+      const fallback = `${args.source} 搜索「${args.company}」: ${urls[args.source]} (提示: ${hints[args.source] || '综合信息'})`;
+
+      // 优先实时搜索，失败回退链接
+      try {
+        const real = await searchTavily(buildSearchQuery(args), getTavilyKey());
+        if (real) return real;
+      } catch (e) {
+        // CORS / 网络 / 限流失败 → 回退为链接提示
+      }
+      return fallback;
     }
   });
 
