@@ -144,6 +144,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.ag-tab').forEach(b => b.disabled = isRunning);
   }
 
+  // 供 app.js 的 Enter 键触发判断
+  window.__isAgentRunning = () => running;
+
   btnRun.addEventListener('click', async () => {
     // 如果正在运行 → 中止
     if (running) {
@@ -298,23 +301,19 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
     }
 
     case 'compare': {
-      const sc1 = streamCallbacks();
       const researcher = prepareAgent(createResearchAgent(tools, llm, memory));
       const comparer = prepareAgent(createCompareAgent(tools, llm, memory));
 
-      chatUI.updateStatus('🔬', '研究 Agent 工作中…');
-      const researchResult = await researcher.run(
-        `请研究以下公司的校招情况并对比：${query}。每家公司至少搜索 2 个信息源。`,
-        { onStream: sc1.onStream, onStreamEnd: sc1.onStreamEnd, onStep: sc1.makeOnStep(), onToolCall: sc1.makeOnToolCall() }
-      );
+      const results = await runSequential([
+        { agent: researcher, key: 'research', meta: { statusIcon: '🔬', statusText: '研究 Agent 工作中…' } },
+        {
+          agent: comparer, key: 'compare',
+          meta: { statusIcon: '⚖️', statusText: '对比 Agent 工作中…', prefix: '[对比] ' },
+          buildTask: (ans) => `基于以下研究结果，请做横向对比分析：\n${ans}`
+        }
+      ], `请研究以下公司的校招情况并对比：${query}。每家公司至少搜索 2 个信息源。`, chatUI);
 
-      const sc2 = streamCallbacks();
-      chatUI.updateStatus('⚖️', '对比 Agent 工作中…');
-      const compareResult = await comparer.run(
-        `基于以下研究结果，请做横向对比分析：\n${researchResult.answer}`,
-        { onStream: sc2.onStream, onStreamEnd: sc2.onStreamEnd, onStep: sc2.makeOnStep((s) => chatUI.addReasoning(s.step, `[对比] ${s.reasoning}`)), onToolCall: sc2.makeOnToolCall() }
-      );
-
+      const [researchResult, compareResult] = results.map(r => r.result);
       chatUI.addFinalAnswer(
         `## 研究结果\n${researchResult.answer}\n\n---\n\n## 对比分析\n${compareResult.answer}`,
         { steps: researchResult.steps + compareResult.steps }
@@ -345,25 +344,22 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
       const researcher = prepareAgent(createResearchAgent(tools, llm, memory));
       const critic = prepareAgent(createCriticAgent(tools, llm, memory));
 
-      const sc1 = streamCallbacks();
-      chatUI.updateStatus('🔬', '研究 Agent 搜集信息…');
-      const r1 = await researcher.run(`请全面研究：${query}。搜索多个来源，交叉验证。`,
-        { onStream: sc1.onStream, onStreamEnd: sc1.onStreamEnd, onStep: sc1.makeOnStep(), onToolCall: sc1.makeOnToolCall() }
-      );
+      let report = '';
+      const results = await runSequential([
+        { agent: researcher, key: 'research1', meta: { statusIcon: '🔬', statusText: '研究 Agent 搜集信息…' } },
+        {
+          agent: critic, key: 'critic',
+          meta: { statusIcon: '🔍', statusText: '批判 Agent 审查质量…', prefix: '[审查] ' },
+          buildTask: (ans) => { report = ans; return `请审查以下研究报告的质量：\n${ans}`; }
+        },
+        {
+          agent: researcher, key: 'research2',
+          meta: { statusIcon: '🔄', statusText: '基于反馈修正…', prefix: '[修正] ' },
+          buildTask: (review) => `请基于以下审查意见，修正并完善你的分析报告：\n\n## 原报告\n${report}\n\n## 审查意见\n${review}\n\n请输出修正后的完整报告。`
+        }
+      ], `请全面研究：${query}。搜索多个来源，交叉验证。`, chatUI);
 
-      const sc2 = streamCallbacks();
-      chatUI.updateStatus('🔍', '批判 Agent 审查质量…');
-      const c1 = await critic.run(`请审查以下研究报告的质量：\n${r1.answer}`,
-        { onStream: sc2.onStream, onStreamEnd: sc2.onStreamEnd, onStep: sc2.makeOnStep((s) => chatUI.addReasoning(s.step, `[审查] ${s.reasoning}`)), onToolCall: sc2.makeOnToolCall() }
-      );
-
-      const sc3 = streamCallbacks();
-      chatUI.updateStatus('🔄', '基于反馈修正…');
-      const r2 = await researcher.run(
-        `请基于以下审查意见，修正并完善你的分析报告：\n\n## 原报告\n${r1.answer}\n\n## 审查意见\n${c1.answer}\n\n请输出修正后的完整报告。`,
-        { onStream: sc3.onStream, onStreamEnd: sc3.onStreamEnd, onStep: sc3.makeOnStep((s) => chatUI.addReasoning(s.step, `[修正] ${s.reasoning}`)), onToolCall: sc3.makeOnToolCall() }
-      );
-
+      const [r1, c1, r2] = results.map(r => r.result);
       const fullUsage = {
         prompt_tokens: (r1.usage?.prompt_tokens || 0) + (c1.usage?.prompt_tokens || 0) + (r2.usage?.prompt_tokens || 0),
         completion_tokens: (r1.usage?.completion_tokens || 0) + (c1.usage?.completion_tokens || 0) + (r2.usage?.completion_tokens || 0),
@@ -373,6 +369,33 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
       break;
     }
   }
+}
+
+// ============ 编排器封装：串行多 Agent + 思考链 UI ============
+async function runSequential(specs, task, chatUI) {
+  let streaming = false;
+  return Orchestrator.sequential(specs, task, {
+    onAgentStart: (name, ctx) => {
+      if (ctx.statusText) chatUI.updateStatus(ctx.statusIcon || '🤖', ctx.statusText);
+    },
+    onStream: (name, ctx) => {
+      streaming = true;
+      chatUI.addStreamingThought(ctx.step, ctx.text, ctx.key);
+    },
+    onStreamEnd: (name, ctx) => {
+      streaming = false;
+      chatUI.finalizeStreamingThought(ctx.step, ctx.key);
+    },
+    onStep: (name, ctx) => {
+      if (!streaming) chatUI.addReasoning(ctx.step, (ctx.prefix || '') + ctx.reasoning);
+    },
+    onToolCall: (name, ctx) => {
+      chatUI.addToolCall(ctx.step, ctx.tool, ctx.input);
+      chatUI.addObservation(ctx.step, ctx.result);
+    },
+    onTokenUsage: (name, ctx) => chatUI.updateTokenBadge(ctx.usage, ctx.cost),
+    onError: (name, ctx) => chatUI.addError(ctx.error)
+  });
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

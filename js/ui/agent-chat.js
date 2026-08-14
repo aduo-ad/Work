@@ -84,9 +84,9 @@ class AgentChatUI {
     `);
   }
 
-  /** 流式思考：创建或更新实时思考卡片 */
-  addStreamingThought(step, text) {
-    const id = `ag-stream-${step}`;
+  /** 流式思考：创建或更新实时思考卡片（key 用于多 Agent 场景下的唯一 ID） */
+  addStreamingThought(step, text, key = '') {
+    const id = key ? `ag-stream-${key}-${step}` : `ag-stream-${step}`;
     let el = document.getElementById(id);
     if (!el) {
       // 首次创建：带闪烁指示器
@@ -111,8 +111,8 @@ class AgentChatUI {
   }
 
   /** 流式思考完成：去掉闪烁，转为普通卡 */
-  finalizeStreamingThought(step) {
-    const el = document.getElementById(`ag-stream-${step}`);
+  finalizeStreamingThought(step, key = '') {
+    const el = document.getElementById(key ? `ag-stream-${key}-${step}` : `ag-stream-${step}`);
     if (!el) return;
     el.classList.remove('ag-step-streaming');
     const dot = el.querySelector('.ag-stream-dot');
