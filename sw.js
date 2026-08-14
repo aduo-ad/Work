@@ -1,8 +1,19 @@
-const CACHE_NAME = 'qiuzhao-v5';
+const CACHE_NAME = 'qiuzhao-v6';
 const ASSETS = [
   './index.html',
   './css/style.css',
+  './css/agent.css',
   './js/app.js',
+  './js/agent-app.js',
+  './js/agents/index.js',
+  './js/core/agent.js',
+  './js/core/agent-worker.js',
+  './js/core/llm.js',
+  './js/core/memory.js',
+  './js/core/tools.js',
+  './js/core/orchestrator.js',
+  './js/core/mock-llm.js',
+  './js/ui/agent-chat.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
