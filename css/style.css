@@ -566,43 +566,6 @@ body {
 [data-theme="dark"] .source-chip.zhihu   { background: #1A2A40; }
 [data-theme="dark"] .source-chip.xiaohongshu { background: #2A1A1E; }
 
-/* AI 分析区域 */
-.ai-section { margin-bottom: 14px; }
-.ai-actions { display: flex; gap: 8px; align-items: stretch; }
-.ai-actions .btn { flex: 1; }
-
-.ai-result-card {
-  background: var(--card); border-radius: var(--radius);
-  padding: 16px; box-shadow: var(--shadow); margin-top: 12px;
-  animation: cardIn .3s ease;
-  border-left: 4px solid var(--purple);
-}
-.ai-result-card .ai-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 12px;
-}
-.ai-result-card .ai-header .ai-badge {
-  font-size: 11px; background: var(--purple-light); color: var(--purple);
-  padding: 3px 10px; border-radius: 999px; font-weight: 600;
-}
-.ai-result-card .ai-content {
-  font-size: 14px; line-height: 1.7; color: var(--text);
-  white-space: pre-wrap; word-break: break-word;
-}
-.ai-result-card .ai-content.loading {
-  color: var(--text-dim); text-align: center; padding: 20px 0;
-}
-.ai-spinner {
-  display: inline-block; width: 20px; height: 20px;
-  border: 2px solid var(--purple-light); border-top-color: var(--purple);
-  border-radius: 50%; animation: spin .8s linear infinite;
-  margin-right: 8px; vertical-align: middle;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.ai-error {
-  color: var(--pink); font-size: 13px; padding: 12px; text-align: center;
-}
-
 /* 研究笔记 */
 .research-notes { display: flex; flex-direction: column; gap: 12px; }
 .note-card {

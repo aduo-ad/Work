@@ -776,7 +776,6 @@ let researchNotes = [];
 let aiApiKey = '';
 let aiProvider = 'deepseek';
 let tavilyKey = '';
-let currentAiResult = null;
 
 // Agent 系统桥接 API
 window.__getAiProvider = () => aiProvider;
@@ -802,41 +801,21 @@ window.__addResearchNote = (company, content, source) => {
   renderResearch();
 };
 
-// AI 提供商配置
+// AI 提供商配置（仅元数据，供设置面板展示；实际 LLM 调用走 js/core/llm.js）
 const AI_PROVIDERS = {
   deepseek: {
     name: 'DeepSeek',
     icon: '🚀',
     hint: '国内直连，免 VPN',
-    getKeyUrl: 'https://platform.deepseek.com/api_keys',
-    call: async (key, prompt) => {
-      const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-        body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 1024 })
-      });
-      if (!resp.ok) { const err = await resp.json().catch(()=>({})); throw new Error(err.error?.message || `请求失败(${resp.status})`); }
-      const data = await resp.json();
-      return data.choices?.[0]?.message?.content || '（未获取到结果）';
-    }
+    getKeyUrl: 'https://platform.deepseek.com/api_keys'
   },
   gemini: {
     name: 'Gemini',
     icon: '🤖',
     hint: '需 VPN，信息更新',
-    getKeyUrl: 'https://aistudio.google.com/apikey',
-    call: async (key, prompt) => {
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 1024 } })
-      });
-      if (!resp.ok) { const err = await resp.json().catch(()=>({})); throw new Error(err.error?.message || `请求失败(${resp.status})`); }
-      const data = await resp.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || '（未获取到结果）';
-    }
+    getKeyUrl: 'https://aistudio.google.com/apikey'
   }
-}; // 临时存储 AI 结果，供保存
+};
 
 // 搜索源配置
 const SEARCH_SOURCES = {
@@ -931,93 +910,6 @@ function searchCompany(sources) {
   showToast(sources.length === 1 ? `🔗 ${SEARCH_SOURCES[sources[0]].label} 链接已展示` : `🔗 ${sources.length} 个链接已展示`);
 }
 
-// AI 分析入口
-async function aiAnalyze() {
-  const query = $('#research-input').value.trim();
-  if (!query) { showToast('请先输入公司名称'); return; }
-  if (!aiApiKey) {
-    showToast('⚠️ 请先在设置中配置 AI API Key');
-    openSettings();
-    return;
-  }
-
-  const provider = AI_PROVIDERS[aiProvider];
-  if (!provider) { showToast('❌ AI 引擎配置错误'); return; }
-
-  const aiSection = $('#ai-section');
-  const aiContent = $('#ai-content');
-  const aiResultCard = $('#ai-result-card');
-  const saveBtn = aiResultCard?.querySelector('.btn-ai-save');
-
-  aiSection.style.display = 'block';
-  aiContent.className = 'ai-content loading';
-  aiContent.innerHTML = `<span class="ai-spinner"></span>${provider.icon} 正在用 ${provider.name} 分析…`;
-  if (saveBtn) saveBtn.style.display = 'none';
-
-  const prompt = `你是一位资深的校招求职顾问。请帮我调研这家公司，直接给出以下结构的分析（每条1-3句话，力求信息准确）：
-
-🏢 **公司**：${query}
-
----
-💰 **薪资待遇**
-- 技术岗校招薪资范围（base + 年终 + 股票）
-- 和同行相比处于什么水平
-
-📝 **面试流程**
-- 技术面几轮？每轮侧重什么？
-- 有没有笔试？难度如何？
-
-💬 **员工评价**
-- 工作强度和加班情况
-- 新人培养和成长机会
-- 团队氛围
-
-🎯 **求职建议**
-- 什么时间投递比较好
-- 面试中需要注意的点
-- 适合什么样的人去
-
-⚠️ 如果信息不确定，请标注「据网络信息」。控制在500字以内。`;
-
-  try {
-    const text = await provider.call(aiApiKey, prompt);
-
-    currentAiResult = {
-      company: query,
-      content: text,
-      date: new Date().toISOString().slice(0, 10),
-      source: `${provider.name} AI`
-    };
-
-    aiContent.className = 'ai-content';
-    aiContent.textContent = text;
-    if (saveBtn) saveBtn.style.display = '';
-
-  } catch (e) {
-    aiContent.className = 'ai-content';
-    const tip = aiProvider === 'gemini' ? '<br><small>Gemini 在国内需要 VPN，也可以试试 DeepSeek</small>' : '<br><small>请检查 API Key 是否正确</small>';
-    aiContent.innerHTML = `<div class="ai-error">❌ ${escapeHTML(e.message)}${tip}</div>`;
-    if (saveBtn) saveBtn.style.display = 'none';
-    currentAiResult = null;
-  }
-}
-
-// 保存 AI 结果到笔记
-function saveAiResult() {
-  if (!currentAiResult) return;
-  researchNotes.unshift({
-    id: uid(),
-    company: currentAiResult.company,
-    content: currentAiResult.content,
-    source: currentAiResult.source,
-    date: currentAiResult.date
-  });
-  saveResearchNotes();
-  renderResearch();
-  showToast('💾 已保存到研究笔记');
-  currentAiResult = null;
-}
-
 // 删除笔记
 function deleteResearchNote(id) {
   researchNotes = researchNotes.filter(n => n.id !== id);
@@ -1081,10 +973,6 @@ function init() {
     chip.addEventListener('click', () => searchCompany([chip.dataset.source]));
   });
 
-  // AI 分析按钮（兼容旧版）
-  const aiBtn = $('#btn-ai-analyze');
-  if (aiBtn) aiBtn.addEventListener('click', aiAnalyze);
-
   // 快捷来源按钮 — 点击时先填入搜索词
   $$('#source-chips .source-chip').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -1097,13 +985,11 @@ function init() {
     });
   });
 
-  // 保存 AI 结果
-  const saveBtn = $('#ai-result-card')?.querySelector('.btn-ai-save');
-  if (saveBtn) saveBtn.addEventListener('click', saveAiResult);
-
-  // 回车触发 AI 分析
+  // 回车触发 Agent（与点击「启动Agent」一致，运行中不重复触发）
   $('#research-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') aiAnalyze();
+    if (e.key === 'Enter' && !window.__isAgentRunning?.()) {
+      document.getElementById('btn-agent-run')?.click();
+    }
   });
 
   // AI 提供商切换
