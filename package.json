@@ -1,0 +1,10 @@
+{
+  "name": "qiuzhao",
+  "version": "1.0.0",
+  "private": true,
+  "description": "阿duo的秋招旅程 — 纯前端 PWA + 自研 ReAct Agent",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
