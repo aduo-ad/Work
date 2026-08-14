@@ -156,7 +156,7 @@ Mock 模式（无需 API Key）：
 ## 项目结构
 
 ```
-qiuzhao/
+Work/
 ├── index.html                    PWA 入口 + Agent UI
 ├── manifest.json                 PWA 配置
 ├── package.json                  ESM 配置 + 测试脚本（零运行时依赖）
