@@ -1,7 +1,7 @@
 /**
  * Agent 工厂 — 创建各类型专用 Agent
  *
- * 面试亮点：
+ * 设计说明：
  *   每个 Agent 有不同的 system prompt 和工具集，
  *   体现了 Agent 的分工协作思想
  *

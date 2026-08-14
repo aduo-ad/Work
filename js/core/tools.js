@@ -2,7 +2,7 @@
  * Tool Registry — Agent 可调用的工具集合
  * 每个工具包含：name, description, parameters (JSON Schema), execute()
  *
- * 面试重点：为什么用 JSON Schema 定义参数？
+ * 为什么用 JSON Schema 定义参数？
  * → LLM 天然理解 JSON Schema 格式，能根据 Schema 生成合法参数
  * → execute() 前做 schema 校验，参数不合法直接拒绝，保证健壮性
  */

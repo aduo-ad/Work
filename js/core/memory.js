@@ -1,7 +1,7 @@
 /**
  * Agent 记忆系统
  *
- * 分层架构（面试重点）：
+ * 分层架构：
  *   Working Memory  — 当前任务上下文，窗口有限（最近 20 轮）
  *   Episodic Memory — 历史研究记录，存 IndexedDB，按相关性检索
  *   Summary Memory  — 压缩摘要，当 Working Memory 溢出时自动压缩

@@ -1,7 +1,7 @@
 /**
  * Agent Worker — 在独立线程中运行 ReAct 循环
  *
- * 面试亮点：
+ * 设计说明：
  *   Web Workers + postMessage 通信 + SharedArrayBuffer 概念
  *   主线程零阻塞，UI 始终 60fps
  *

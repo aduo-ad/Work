@@ -1,7 +1,7 @@
 /**
  * ReAct Agent 核心循环
  *
- * 面试核心：不依赖 LangChain，手写 Agent Loop
+ * 核心：不依赖 LangChain，手写 Agent Loop
  *
  * 模式：Thought → Action → Observation → Thought → ...
  *   Thought:    LLM 分析当前状态，决定下一步做什么

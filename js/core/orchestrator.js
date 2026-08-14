@@ -1,7 +1,7 @@
 /**
  * 多 Agent 编排器
  *
- * 三种编排模式（面试重点）：
+ * 三种编排模式：
  *   1. Sequential  — Agent A 输出作为 Agent B 输入（流水线）
  *   2. Parallel    — 多个 Agent 同时执行，合并结果
  *   3. Debate      — 两个 Agent 对立观点辩论，裁判 Agent 裁决

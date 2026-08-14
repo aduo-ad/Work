@@ -1,7 +1,7 @@
 /**
  * Agent 系统集成 — 连接 Agent 框架与现有 PWA
  *
- * 面试亮点：
+ * 设计说明：
  *   自研 Agent 框架 vs 使用 LangChain。
  *   这里选择自研，以便完全控制 ReAct 循环的每一步，
  *   实现细粒度的可观测性（trace、step回调）。
