@@ -8,22 +8,47 @@
  */
 
 class Orchestrator {
-  /** 串行流水线 — 每个 Agent 的输出传给下一个 */
+  /**
+   * 串行流水线 — 每个 Agent 的输出传给下一个。
+   *
+   * agents 元素既可以是 ReActAgent 实例，也可以是规格对象：
+   *   { agent, task?, buildTask?, key?, meta? }
+   *   - task      固定任务（不依赖上游）
+   *   - buildTask 以上游 answer 为入参动态构造任务
+   *   - key       唯一标识（用于流式卡片 ID 去重）
+   *   - meta      透传给回调的额外字段（如状态文案/前缀）
+   *
+   * 所有回调统一以 (agentName, ctx) 转发，ctx 携带 key/index/meta
+   * 以及该事件专属字段。
+   */
   static async sequential(agents, task, callbacks = {}) {
     const results = [];
     let input = task;
 
-    for (const agent of agents) {
-      callbacks.onAgentStart?.(agent.name);
+    for (let i = 0; i < agents.length; i++) {
+      const spec = agents[i];
+      const agent = spec.agent || spec;
+      const agentTask = typeof spec.buildTask === 'function'
+        ? spec.buildTask(input)
+        : (spec.task != null ? spec.task : input);
+      const key = spec.key || spec.label || `${agent.name}-${i + 1}`;
+      const base = { key, index: i, ...(spec.meta || {}) };
 
-      const result = await agent.run(input, {
-        onStep:    (s) => callbacks.onStep?.(agent.name, s),
-        onToolCall:(t) => callbacks.onToolCall?.(agent.name, t),
+      callbacks.onAgentStart?.(agent.name, { ...base, task: agentTask });
+
+      const result = await agent.run(agentTask, {
+        onStream:      (step, text) => callbacks.onStream?.(agent.name, { ...base, step, text }),
+        onStreamEnd:   (step, full) => callbacks.onStreamEnd?.(agent.name, { ...base, step, full }),
+        onStep:        (s) => callbacks.onStep?.(agent.name, { ...base, ...s }),
+        onToolCall:    (t) => callbacks.onToolCall?.(agent.name, { ...base, ...t }),
+        onTokenUsage:  (usage, cost) => callbacks.onTokenUsage?.(agent.name, { ...base, usage, cost }),
+        onComplete:    (r) => callbacks.onComplete?.(agent.name, { ...base, result: r }),
+        onError:       (e) => callbacks.onError?.(agent.name, { ...base, ...e })
       });
 
       results.push({ agent: agent.name, result });
       input = result.answer; // 下个 Agent 的输入
-      callbacks.onAgentEnd?.(agent.name, result);
+      callbacks.onAgentEnd?.(agent.name, { ...base, result });
     }
 
     return results;
