@@ -14,7 +14,7 @@
 |---|---|
 | 📋 **投递管理** | 看板拖拽（待投递→已投递→面试中→已Offer→已拒绝），支持搜索、筛选、导出 |
 | ⚖️ **Offer 对比** | 薪资结构（base×月数+签字费+股票），多 Offer 可视化对比 |
-| 🔬 **研究院** | AI Agent 自主规划多步执行，搜索多平台信息、交叉验证、输出结构化报告 |
+| 🔬 **研究院** | AI Agent 自主规划多步执行，实时搜索（Tavily）多平台信息、交叉验证、输出结构化报告 |
 
 研究院是本项目的技术核心——基于 ReAct 模式，Agent 自己决定搜什么、搜几个源、何时结束，不是简单的一问一答。
 
@@ -45,10 +45,11 @@
 ```
 浏览器（PWA）
 ├── app.js               传统脚本 — 投递管理、Offer 对比
-├── agent-app.js         ES Module — Agent 入口、LLM 工厂、Worker 管理
+├── agent-app.js         ES Module — Agent 入口、Worker 管理
 │   ├── core/
 │   │   ├── agent.js         ReAct Loop（Thought → Action → Observation）
 │   │   ├── agent-worker.js  Web Worker 版 Agent
+│   │   ├── llm.js           DeepSeek / Gemini LLM 工厂（流式）
 │   │   ├── memory.js        三层记忆（Working / Episodic / Summary）
 │   │   ├── tools.js         工具注册表 + 4 个内置工具
 │   │   ├── orchestrator.js  多 Agent 编排（Sequential / Parallel / Debate）
@@ -116,7 +117,7 @@ Worker 中无法访问 DOM/IndexedDB 的工具，通过 `tool_request` → `tool
 
 ## 难点
 
-**CORS 沙箱限制**：浏览器不能发任意 HTTP 请求，搜索工具改为返回链接 + 平台信息提示。
+**CORS 沙箱限制**：浏览器不能发任意 HTTP 请求。`web_search` 通过 Tavily（支持浏览器端 CORS，keyless 免费额度无需 API Key）做实时搜索，任何失败自动回退为平台链接提示，Agent 永不因搜索中断。
 
 **Token 消耗控制**：ReAct 每步追加消息，上限通过 Working Memory 压缩 + maxSteps=8 + 温度控制实现。
 
@@ -148,32 +149,40 @@ Mock 模式（无需 API Key）：
 |---|---|---|
 | DeepSeek | https://platform.deepseek.com/api_keys | 国内直连，推荐 |
 | Gemini | https://aistudio.google.com/apikey | 需 VPN |
+| Tavily（搜索） | https://app.tavily.com | 可选；实时搜索，无 Key 也走免费额度 |
 
 ---
 
 ## 项目结构
 
 ```
-qiuzhao/                         总行数 4,147
+qiuzhao/
 ├── index.html                    PWA 入口 + Agent UI
 ├── manifest.json                 PWA 配置
+├── package.json                  ESM 配置 + 测试脚本（零运行时依赖）
 ├── sw.js                         Service Worker
 ├── css/
 │   ├── style.css                 主样式（移动端优先）
 │   └── agent.css                 Agent 思考链样式
+├── test/                         node:test 单元测试
+│   ├── agent.test.js             ReAct 循环 / JSON 容错解析
+│   ├── tools.test.js             工具注册表 / 参数校验 / 计算
+│   ├── memory.test.js            三层记忆 / 压缩阈值
+│   └── llm.test.js               LLM 工厂契约
 └── js/
-    ├── app.js                    主应用（投递/Offer/桥接）
-    ├── agent-app.js              Agent 入口（LLM/Worker/回调）
+    ├── app.js                    主应用（投递/Offer/桥接/触屏拖拽）
+    ├── agent-app.js              Agent 入口（Worker/回调/编排）
     ├── agents/index.js           4 个 Agent 工厂
     ├── core/
     │   ├── agent.js              ReAct Loop 核心
     │   ├── agent-worker.js       Web Worker 版 Agent
+    │   ├── llm.js                DeepSeek / Gemini LLM 工厂
     │   ├── memory.js             三层记忆
     │   ├── tools.js              ToolRegistry + 工具
     │   ├── orchestrator.js       多 Agent 编排
     │   └── mock-llm.js           Mock LLM
-    └── ui/agent-chat.js          思考链 UI
+    └── ui/agent-chat.js          思考链 UI + Markdown 渲染
 
 技术栈：纯原生 JS · ES Module · IndexedDB · ReadableStream · Web Worker · AbortController
-零第三方依赖。
+零第三方依赖。测试用 `node --test` 运行。
 ```
