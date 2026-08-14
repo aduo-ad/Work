@@ -20,6 +20,8 @@
 
 import { ReActAgent } from './agent.js';
 import { ToolRegistry, createDefaultTools } from './tools.js';
+import { createLLM } from './llm.js';
+import { MemorySystem } from './memory.js';
 import {
   createResearchAgent,
   createCompareAgent,
@@ -27,104 +29,10 @@ import {
   createCriticAgent
 } from '../agents/index.js';
 
-// ============ LLM 工厂（Worker 内独立 fetch） ============
-
-function createWorkerLLM(provider, apiKey) {
-  const COST = { deepseek: { input: 1, output: 2 }, gemini: { input: 0.5, output: 1.5 } };
-
-  if (provider === 'deepseek') {
-    const llm = {
-      name: 'DeepSeek',
-      cost: COST.deepseek,
-      lastUsage: null,
-
-      async chat(messages, opts = {}) {
-        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: 'deepseek-chat', messages, temperature: opts.temperature ?? 0.7, max_tokens: 2048 }),
-          signal: opts.signal || undefined
-        });
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
-        }
-        const data = await resp.json();
-        const u = data.usage;
-        llm.lastUsage = u ? { prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens, total_tokens: u.total_tokens } : null;
-        return data.choices?.[0]?.message?.content || '';
-      },
-
-      async chatStream(messages, opts, onChunk) {
-        const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: 'deepseek-chat', messages, temperature: opts.temperature ?? 0.7, max_tokens: 2048, stream: true }),
-          signal: opts.signal || undefined
-        });
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
-        }
-
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '', buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-            try {
-              const json = JSON.parse(data);
-              const delta = json.choices?.[0]?.delta?.content || '';
-              if (delta) { fullText += delta; onChunk?.(delta, fullText); }
-              if (json.usage) {
-                llm.lastUsage = { prompt_tokens: json.usage.prompt_tokens, completion_tokens: json.usage.completion_tokens, total_tokens: json.usage.total_tokens };
-              }
-            } catch (e) { /* skip */ }
-          }
-        }
-        return fullText;
-      }
-    };
-    return llm;
-  }
-
-  // Gemini（简化版）
-  const llm = {
-    name: 'Gemini',
-    cost: COST.gemini,
-    lastUsage: null,
-    async chat(messages, opts = {}) {
-      const prompt = messages.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: 2048 } }),
-          signal: opts.signal || undefined }
-      );
-      if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.error?.message || `请求失败(${resp.status})`); }
-      const data = await resp.json();
-      const u = data.usageMetadata;
-      llm.lastUsage = u ? { prompt_tokens: u.promptTokenCount, completion_tokens: u.candidatesTokenCount, total_tokens: u.totalTokenCount } : null;
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    },
-    async chatStream(messages, opts, onChunk) { /* fallback to chat */ return this.chat(messages, opts); }
-  };
-  return llm;
-}
-
 // ============ 主线程工具代理 ============
 // 这些工具需要 DOM/IndexedDB，由主线程执行
 
-const MAIN_THREAD_TOOLS = ['save_research', 'query_knowledge'];
+const MAIN_THREAD_TOOLS = ['web_search', 'save_research', 'query_knowledge'];
 
 let _pendingToolResolve = null;
 let _toolRequestId = 0;
@@ -142,7 +50,7 @@ self.onmessage = async (e) => {
       const { task, provider, apiKey, mode, temperature } = msg;
       _abortController = new AbortController();
 
-      const llm = createWorkerLLM(provider, apiKey);
+      const llm = createLLM(provider, apiKey);
       const tools = new ToolRegistry();
       createDefaultTools(tools);
 
@@ -171,7 +79,8 @@ self.onmessage = async (e) => {
         full: createResearchAgent // full mode uses multiple agents
       };
       const createFn = agentFactory[mode] || agentFactory.research;
-      const agent = createFn(tools, llm);
+      // Worker 内使用纯内存版 Working Memory（不触碰 IndexedDB）
+      const agent = createFn(tools, llm, new MemorySystem());
       agent.setAbortController(_abortController);
 
       try {

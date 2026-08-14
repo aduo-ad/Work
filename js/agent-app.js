@@ -8,6 +8,7 @@
  */
 import { ToolRegistry, createDefaultTools } from './core/tools.js';
 import { MemorySystem } from './core/memory.js';
+import { createLLM as createProviderLLM } from './core/llm.js';
 import { Orchestrator } from './core/orchestrator.js';
 import { AgentChatUI } from './ui/agent-chat.js';
 import { MockLLM, isMockEnabled } from './core/mock-llm.js';
@@ -122,180 +123,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       return null;
     }
 
-    // DeepSeek 接口
-    // 成本常量（元/百万 token）
-    const COST = { deepseek: { input: 1, output: 2 }, gemini: { input: 0.5, output: 1.5 } };
-
-    if (provider === 'deepseek') {
-      const llm = {
-        name: 'DeepSeek',
-        cost: COST.deepseek,
-        lastUsage: null, // { prompt_tokens, completion_tokens, total_tokens }
-
-        async chat(messages, opts = {}) {
-          const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-            body: JSON.stringify({
-              model: 'deepseek-chat',
-              messages,
-              temperature: opts.temperature ?? 0.7,
-              max_tokens: 2048
-            }),
-            signal: opts.signal || undefined
-          });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
-          }
-          const data = await resp.json();
-          const u = data.usage;
-          llm.lastUsage = u ? { prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens, total_tokens: u.total_tokens } : null;
-          return data.choices?.[0]?.message?.content || '';
-        },
-
-        /** 流式输出：边生成边回调 onChunk */
-        async chatStream(messages, opts, onChunk) {
-          const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-            body: JSON.stringify({
-              model: 'deepseek-chat',
-              messages,
-              temperature: opts.temperature ?? 0.7,
-              max_tokens: 2048,
-              stream: true
-            }),
-            signal: opts.signal || undefined
-          });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
-          }
-
-          const reader = resp.body.getReader();
-          const decoder = new TextDecoder();
-          let fullText = '';
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // 不完整的行留着下次拼
-
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
-              try {
-                const json = JSON.parse(data);
-                const delta = json.choices?.[0]?.delta?.content || '';
-                if (delta) {
-                  fullText += delta;
-                  onChunk?.(delta, fullText);
-                }
-                if (json.usage) {
-                  llm.lastUsage = { prompt_tokens: json.usage.prompt_tokens, completion_tokens: json.usage.completion_tokens, total_tokens: json.usage.total_tokens };
-                }
-              } catch (e) { /* 跳过解析失败的行 */ }
-            }
-          }
-          return fullText;
-        }
-      };
-      return llm;
-    }
-
-    // Gemini 接口
-    if (provider === 'gemini') {
-      const llm = {
-        name: 'Gemini',
-        cost: COST.gemini,
-        lastUsage: null,
-
-        async chat(messages, opts = {}) {
-          const prompt = messages.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
-          const resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: 2048 }
-              }),
-              signal: opts.signal || undefined
-            }
-          );
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
-          }
-          const data = await resp.json();
-          const u = data.usageMetadata;
-          llm.lastUsage = u ? { prompt_tokens: u.promptTokenCount, completion_tokens: u.candidatesTokenCount, total_tokens: u.totalTokenCount } : null;
-          return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        },
-
-        /** 流式输出 */
-        async chatStream(messages, opts, onChunk) {
-          const prompt = messages.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
-          const resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: opts.temperature ?? 0.7, maxOutputTokens: 2048 }
-              }),
-              signal: opts.signal || undefined
-            }
-          );
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error?.message || `API 请求失败 (${resp.status})`);
-          }
-
-          const reader = resp.body.getReader();
-          const decoder = new TextDecoder();
-          let fullText = '';
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const data = line.slice(6).trim();
-              try {
-                const json = JSON.parse(data);
-                const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                if (text) {
-                  fullText += text;
-                  onChunk?.(text, fullText);
-                }
-                if (json.usageMetadata) {
-                  llm.lastUsage = { prompt_tokens: json.usageMetadata.promptTokenCount, completion_tokens: json.usageMetadata.candidatesTokenCount, total_tokens: json.usageMetadata.totalTokenCount };
-                }
-              } catch (e) { /* 跳过 */ }
-            }
-          }
-          return fullText;
-        }
-      };
-      return llm;
-    }
-
-    return null;
+    // 统一由 js/core/llm.js 创建（DeepSeek / Gemini），Mock 分支在上方已提前返回
+    return createProviderLLM(provider, apiKey);
   }
 
   // ============ Agent 模式（由 app.js 的 window.__setAgentMode 控制） ============
@@ -456,7 +285,7 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
   switch (mode) {
     case 'research': {
       const sc = streamCallbacks();
-      const agent = prepareAgent(createResearchAgent(tools, llm));
+      const agent = prepareAgent(createResearchAgent(tools, llm, memory));
       await agent.run(`请全面研究这家公司：${query}。使用 web_search 搜索至少 3 个不同来源。`, {
         onStream:    sc.onStream,
         onStreamEnd: sc.onStreamEnd,
@@ -470,8 +299,8 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
 
     case 'compare': {
       const sc1 = streamCallbacks();
-      const researcher = prepareAgent(createResearchAgent(tools, llm));
-      const comparer = prepareAgent(createCompareAgent(tools, llm));
+      const researcher = prepareAgent(createResearchAgent(tools, llm, memory));
+      const comparer = prepareAgent(createCompareAgent(tools, llm, memory));
 
       chatUI.updateStatus('🔬', '研究 Agent 工作中…');
       const researchResult = await researcher.run(
@@ -495,7 +324,7 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
 
     case 'interview': {
       const sc = streamCallbacks();
-      const agent = prepareAgent(createInterviewAgent(tools, llm));
+      const agent = prepareAgent(createInterviewAgent(tools, llm, memory));
       const localKnowledge = memory.query(query);
       const knowledgeHint = localKnowledge.length
         ? `\n本地知识库已有以下信息，请利用：${JSON.stringify(localKnowledge)}`
@@ -513,8 +342,8 @@ async function runAgent(mode, query, llm, tools, chatUI, abortController) {
     }
 
     case 'full': {
-      const researcher = prepareAgent(createResearchAgent(tools, llm));
-      const critic = prepareAgent(createCriticAgent(tools, llm));
+      const researcher = prepareAgent(createResearchAgent(tools, llm, memory));
+      const critic = prepareAgent(createCriticAgent(tools, llm, memory));
 
       const sc1 = streamCallbacks();
       chatUI.updateStatus('🔬', '研究 Agent 搜集信息…');
