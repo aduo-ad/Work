@@ -205,22 +205,132 @@ class AgentChatUI {
   /** 保存回调 */
   onSave(cb) { this._onSave = cb; }
 
-  /** 简单的 Markdown 渲染 */
+  /** Markdown 渲染：表格 / 引用 / 代码块 / 行内代码 / 链接 / 列表 / 标题 */
   _renderMarkdown(text) {
-    let html = this._esc(text);
-    // 标题
-    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-    // 无序列表
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    // 有序列表
-    html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
-    // 粗体
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // 换行：所有换行 → <br>，连续多个 → 段落间距
-    html = html.replace(/\n/g, '<br>');
-    html = html.replace(/(<br>\s*){3,}/g, '<br><br>');
-    return html;
+    const src = String(text ?? '');
+    const lines = src.split('\n');
+    const html = [];
+    let inCode = false;
+    let codeBuf = [];
+    let listType = null;   // 'ul' | 'ol' | null
+    let tableBuf = [];
+
+    const flushList = () => {
+      if (listType) { html.push(`</${listType}>`); listType = null; }
+    };
+    const flushTable = () => {
+      if (tableBuf.length >= 2) {
+        const headers = this._splitTableRow(tableBuf[0]);
+        let t = '<table><thead><tr>';
+        headers.forEach(c => { t += `<th>${this._inline(c)}</th>`; });
+        t += '</tr></thead><tbody>';
+        for (let i = 2; i < tableBuf.length; i++) { // 第 1 行是分隔行 |---|
+          const cells = this._splitTableRow(tableBuf[i]);
+          t += '<tr>';
+          headers.forEach((_, j) => { t += `<td>${this._inline(cells[j] || '')}</td>`; });
+          t += '</tr>';
+        }
+        t += '</tbody></table>';
+        html.push(t);
+      } else if (tableBuf.length) {
+        html.push(`<p>${this._inline(tableBuf.join(' '))}</p>`);
+      }
+      tableBuf = [];
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // 代码块边界
+      if (/^```/.test(trimmed)) {
+        if (!inCode) {
+          flushList(); flushTable();
+          inCode = true; codeBuf = [];
+        } else {
+          html.push(`<pre><code>${this._esc(codeBuf.join('\n'))}</code></pre>`);
+          inCode = false; codeBuf = [];
+        }
+        continue;
+      }
+      if (inCode) { codeBuf.push(line); continue; }
+
+      // 表格行（连续 |...| 行聚合成表格）
+      if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 1) {
+        flushList();
+        tableBuf.push(trimmed);
+        continue;
+      }
+      if (tableBuf.length) flushTable();
+
+      // 空行
+      if (!trimmed) { flushList(); continue; }
+
+      // 引用
+      if (/^>/.test(trimmed)) {
+        flushList(); flushTable();
+        html.push(`<blockquote>${this._inline(trimmed.replace(/^>\s?/, ''))}</blockquote>`);
+        continue;
+      }
+
+      // 标题（## → h3、### → h4，与原版视觉一致）
+      const h = trimmed.match(/^(#{1,4})\s+(.+)$/);
+      if (h) {
+        flushList(); flushTable();
+        const level = Math.min(h[1].length + 1, 6);
+        html.push(`<h${level}>${this._inline(h[2])}</h${level}>`);
+        continue;
+      }
+
+      // 分隔线
+      if (/^(-{3,}|\*{3,})$/.test(trimmed)) {
+        flushList(); flushTable();
+        html.push('<hr>');
+        continue;
+      }
+
+      // 无序列表
+      const ul = trimmed.match(/^[-*]\s+(.+)$/);
+      if (ul) {
+        flushTable();
+        if (listType !== 'ul') { flushList(); html.push('<ul>'); listType = 'ul'; }
+        html.push(`<li>${this._inline(ul[1])}</li>`);
+        continue;
+      }
+
+      // 有序列表
+      const ol = trimmed.match(/^\d+[.)]\s+(.+)$/);
+      if (ol) {
+        flushTable();
+        if (listType !== 'ol') { flushList(); html.push('<ol>'); listType = 'ol'; }
+        html.push(`<li>${this._inline(ol[1])}</li>`);
+        continue;
+      }
+
+      // 普通段落
+      flushList(); flushTable();
+      html.push(`<p>${this._inline(trimmed)}</p>`);
+    }
+
+    if (inCode) html.push(`<pre><code>${this._esc(codeBuf.join('\n'))}</code></pre>`);
+    flushTable();
+    flushList();
+
+    return html.join('\n');
+  }
+
+  /** 拆解表格行 `| a | b |` → [a, b] */
+  _splitTableRow(line) {
+    return line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim());
+  }
+
+  /** 行内 Markdown：粗体 / 斜体 / 行内代码 / 链接 */
+  _inline(text) {
+    let s = this._esc(text);
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+    s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return s;
   }
 
   _append(html) {
